@@ -5,10 +5,6 @@ local avatars = args.Avatars
 local scroller = args.Scroller
 local scroller_item_mt = LoadActor("./ScrollerItemMT.lua")
 
-local LightenColor = function(c)
-	return { c[1]*1.25, c[2]*1.25, c[3]*1.25, c[4] }
-end
-
 -- -----------------------------------------------------------------------
 -- TODO: start over from scratch so that these numbers make sense in SL
 --       as-is, they are half-leftover from editing _fallback's code
@@ -38,6 +34,27 @@ if PROFILEMAN:GetNumLocalProfiles() <= 0 then
 end
 -- -----------------------------------------------------------------------
 
+local initial_data = profile_data[0]
+local pos = nil
+
+if SL.Global.FastProfileSwitchInProgress then
+	-- If we're fast profile switching, we want to open the profile scrollers
+	-- focused on current player profiles. Let's remember the index of the profile
+	-- so that we can scroll to it.
+	for profile in ivalues(profile_data) do
+		if profile.guid == PROFILEMAN:GetProfile(player):GetGUID() then
+			pos = profile.index
+			break
+		end
+	end
+	-- If we haven't found a matching profile looking in profile_data, this has to
+	-- be [GUEST]
+	pos = pos or 0
+
+	initial_data = profile_data[pos]
+end
+
+
 local FrameBackground = function(c, player, w)
 	w = w or frame.w
 	scroller.w = w - info.w
@@ -51,6 +68,15 @@ local FrameBackground = function(c, player, w)
 				self:runcommandsonleaves(function(leaf) leaf:accelerate(0.25):cropbottom(1) end)
 			end
 		end,
+
+		-- top mask to hide scroller text
+		Def.Quad{
+			InitCommand=function(self) self:horizalign(left):vertalign(bottom):setsize(540,50):xy(-self:GetWidth()/2, -107):MaskSource() end
+		},
+		-- bottom mask to hide scroller text
+		Def.Quad{
+			InitCommand=function(self) self:horizalign(left):vertalign(top):setsize(540,120):xy(-self:GetWidth()/2, 107):MaskSource() end
+		},
 
 		-- border
 		Def.Quad{
@@ -88,7 +114,9 @@ return Def.ActorFrame{
 			self:zoom(1.15):bounceend(0.175):zoom(1)
 		end
 	end,
-
+	PreventEscapeMessageCommand=function(self)
+		self:finishtweening():bounceend(0.1):addx(5):bounceend(0.1):addx(-10):bounceend(0.1):addx(5)
+	end,
 
 	-- dark frame prompting players to "Press START to join!"
 	-- (or "Enter credits to join!" depending on CoinMode and available credits)
@@ -98,17 +126,29 @@ return Def.ActorFrame{
 
 		LoadFont("Common Normal")..{
 			InitCommand=function(self)
+				self:diffuseshift():effectcolor1(1,1,1,1):effectcolor2(0.5,0.5,0.5,1)
+				self:diffusealpha(0):maxwidth(180)
+				self:queuecommand("ResetText")
+			end,
+			OnCommand=function(self) self:sleep(0.3):linear(0.1):diffusealpha(1) end,
+			OffCommand=function(self) self:linear(0.1):diffusealpha(0) end,
+			ResetTextCommand=function(self)
 				if IsArcade() and not GAMESTATE:EnoughCreditsToJoin() then
 					self:settext( THEME:GetString("ScreenSelectProfile", "EnterCreditsToJoin") )
 				else
 					self:settext( THEME:GetString("ScreenSelectProfile", "PressStartToJoin") )
 				end
-
-				self:diffuseshift():effectcolor1(1,1,1,1):effectcolor2(0.5,0.5,0.5,1)
-				self:diffusealpha(0):maxwidth(180)
 			end,
-			OnCommand=function(self) self:sleep(0.3):linear(0.1):diffusealpha(1) end,
-			OffCommand=function(self) self:linear(0.1):diffusealpha(0) end,
+			UnselectedProfileMessageCommand=function(self, params)
+				if params.PlayerNumber ~= player then return end
+
+				self:queuecommand("ResetText")
+			end,
+			SelectedProfileMessageCommand=function(self, params)
+				if params.PlayerNumber ~= player then return end
+
+				self:settext("Waiting...")
+			end,
 			CoinsChangedMessageCommand=function(self)
 				if IsArcade() and GAMESTATE:EnoughCreditsToJoin() then
 					self:settext(THEME:GetString("ScreenSelectProfile", "PressStartToJoin"))
@@ -123,7 +163,7 @@ return Def.ActorFrame{
 		InitCommand=function(self)
 			-- Create the info needed for the "[Guest]" scroller item.
 			-- It won't map to any real local profile (as desired!), so we'll hardcode
-			-- an index of 0, and handle it later, on ScreenSelectProfile's OffCommand
+			-- an index of 0, and handle it later, on ScreenSelectProfile's FinishCommand
 			-- in default.lua if either/both players want to chose it.
 			local guest_profile = { index=0, displayname=THEME:GetString("ScreenSelectProfile", "GuestProfile") }
 
@@ -138,7 +178,28 @@ return Def.ActorFrame{
 			end
 
 			scroller.focus_pos = 5
-			scroller:set_info_set(scroller_data, 0)
+			-- initialize to the guest profile in case we don't have a default profile
+			scroller:set_info_set(scroller_data, 1)
+			scroller:scroll_by_amount(-1)
+
+			-- Scroll to the current player profile, if any
+			if pos then
+				local curr_index = scroller:get_info_at_focus_pos().index
+				scroller:scroll_by_amount(pos - curr_index)
+			else
+				local pn = ToEnumShortString(player)
+				if PREFSMAN:GetPreference("DefaultLocalProfileID"..pn) ~= "" then
+					local default_profile_id = PREFSMAN:GetPreference("DefaultLocalProfileID"..pn)
+					local profile_dir = PROFILEMAN:LocalProfileIDToDir(default_profile_id)
+					for i, profile_item in ipairs(scroller_data) do
+						if profile_item.dir == profile_dir then
+							scroller:scroll_by_amount(i-4)
+							initial_data = profile_data[i-4]
+							break
+						end
+					end
+				end
+			end
 		end,
 
 		FrameBackground(PlayerColor(player), player, frame.w * 1.1),
@@ -156,10 +217,9 @@ return Def.ActorFrame{
 		Def.ActorFrame{
 			Name="DataFrame",
 			InitCommand=function(self)
-				-- FIXME
 				self:x(15.5)
 			end,
-			OnCommand=function(self) self:playcommand("Set", profile_data[1]) end,
+			OnCommand=function(self) self:playcommand("Set", initial_data) end,
 
 			-- semi-transparent Quad to the right of this colored frame to present profile stats and mods
 			Def.Quad {
@@ -202,7 +262,7 @@ return Def.ActorFrame{
 					Def.ActorFrame{
 						InitCommand=function(self) self:visible(false) end,
 						SetCommand=function(self, params)
-							if params and params.displayname and avatars[params.displayname] then
+							if params and params.index and avatars[params.index] then
 								self:visible(false)
 							else
 								self:visible(true)
@@ -214,9 +274,12 @@ return Def.ActorFrame{
 								self:align(0,0):zoomto(avatar_dim,avatar_dim):diffuse(color("#283239aa"))
 							end
 						},
-						LoadActor(THEME:GetPathG("", "_Mario/silhouette"))..{
+						LoadActor(THEME:GetPathG("", "_VisualStyles/".. ThemePrefs.Get("VisualStyle") .."/SelectColor"))..{
 							InitCommand=function(self)
 								self:align(0,0):zoom(0.09):diffusealpha(0.9):xy(13, 8)
+								if ThemePrefs.Get("VisualStyle") == "SRPG8" then
+									self:zoom(0.3):xy(5, 0)
+								end
 							end
 						},
 						LoadFont("Common Normal")..{
@@ -241,8 +304,8 @@ return Def.ActorFrame{
 							self:align(0,0):scaletoclipped(avatar_dim,avatar_dim)
 						end,
 						SetCommand=function(self, params)
-							if params and params.displayname and avatars[params.displayname] then
-								self:SetTexture(avatars[params.displayname]):visible(true)
+							if params and params.index and avatars[params.index] then
+								self:Load(avatars[params.index]):visible(true)
 							else
 								self:visible(false)
 							end
@@ -270,14 +333,14 @@ return Def.ActorFrame{
 				},
 
 				LoadFont("Common Normal")..{
-					Name="SRPG4 Level",
+					Name="5 Level",
 					InitCommand=function(self)
 						self:align(0,0):xy(info.padding*1.25,-16):zoom(0.65):vertspacing(-2)
 						self:maxwidth((info.w-info.padding*2.5)/self:GetZoom())
 					end,
 					SetCommand=function(self, params)
 						if params then
-							self:visible(true):settext(params.level and ("SRPG4 Level: "..params.level) or "")
+							self:visible(true):settext(params.level and ("SRPG8 Level: "..params.level) or "")
 						else
 							self:visible(false):settext("")
 						end
@@ -385,8 +448,8 @@ return Def.ActorFrame{
 	LoadFont("Common Normal")..{
 		Name='SelectedProfileText',
 		InitCommand=function(self)
-			self:settext(profile_data[1] and profile_data[1].displayname or "")
-			self:y(160):zoom(1.35):shadowlength(0):cropright(1)
+			self:settext(initial_data and initial_data.displayname or "")
+			self:y(160):zoom(1.35):shadowlength(ThemePrefs.Get("RainbowMode") and 0.5 or 0):cropright(1)
 		end,
 		OnCommand=function(self) self:sleep(0.2):smooth(0.2):cropright(0) end
 	}

@@ -7,52 +7,96 @@
 -- For now, this table is local to this file, but might be moved into the SL table (or something)
 -- in the future to facilitate type checking in ./Scripts/SL-PlayerOptions.lua and elsewhere.
 
-local profile_whitelist = {
-	SpeedModType = "string",
-	SpeedMod = "number",
-	Mini = "string",
-	NoteSkin = "string",
-	JudgmentGraphic = "string",
-	ComboFont = "string",
-	HoldJudgment = "string",
+local permitted_profile_settings = {
+
+	----------------------------------
+	-- "Main Modifiers"
+	-- OptionRows that appear in SL's first page of PlayerOptions
+
+	SpeedModType     = "string",
+	SpeedMod         = "number",
+	Mini             = "string",
+	NoteSkin         = "string",
+	JudgmentGraphic  = "string",
+	ComboFont        = "string",
+	HoldJudgment     = "string",
 	BackgroundFilter = "string",
+	NoteFieldOffsetX = "number",
+	NoteFieldOffsetY = "number",
+	VisualDelay      = "string",
 
-	HideTargets = "boolean",
-	HideSongBG = "boolean",
-	HideCombo = "boolean",
-	HideLifebar = "boolean",
-	HideScore = "boolean",
-	HideDanger = "boolean",
-	HideComboExplosions = "boolean",
+	----------------------------------
+	-- "Advanced Modifiers"
+	-- OptionRows that appear in SL's second page of PlayerOptions
 
-	LifeMeterType = "string",
-	DataVisualizations = "string",
-	TargetScore = "number",
+	HideTargets          = "boolean",
+	HideSongBG           = "boolean",
+	HideCombo            = "boolean",
+	HideLifebar          = "boolean",
+	HideScore            = "boolean",
+	HideDanger           = "boolean",
+	HideComboExplosions  = "boolean",
+
+	LifeMeterType        = "string",
+	DataVisualizations   = "string",
+	TargetScore          = "number",
 	ActionOnMissedTarget = "string",
 
-	MeasureCounter = "string",
-	MeasureCounterLeft = "boolean",
-	MeasureCounterUp = "boolean",
-	HideLookahead = "boolean",
+	MeasureCounter       = "string",
+	MeasureCounterLeft   = "boolean",
+	MeasureCounterUp     = "boolean",
+	HideLookahead        = "boolean",
 
-	ColumnFlashOnMiss = "boolean",
-	SubtractiveScoring = "boolean",
-	Pacemaker = "boolean",
-	MissBecauseHeld = "boolean",
-	NPSGraphAtTop = "boolean",
+	MeasureLines         = "string",
 
-	ReceptorArrowsPosition = "string",
+	ColumnFlashOnMiss    = "boolean",
+	SubtractiveScoring   = "boolean",
+	Pacemaker            = "boolean",
+	NPSGraphAtTop        = "boolean",
+	JudgmentTilt         = "boolean",
+	ColumnCues           = "boolean",
+	DisplayScorebox      = "boolean",
+
+	ErrorBar             = "string",
+	ErrorBarUp           = "boolean",
+	ErrorBarMultiTick    = "boolean",
+	ErrorBarTrim         = "string",
+
+	ShowFaPlusWindow     = "boolean",
+	ShowEXScore          = "boolean",
+	ShowFaPlusPane       = "boolean",
+
+	HideEarlyDecentWayOffJudgments = "boolean",
+	HideEarlyDecentWayOffFlash     = "boolean",
+
+	----------------------------------
+	-- Profile Settings without OptionRows
+	-- these settings are saved per-profile, but are transparently managed by the theme
+	-- they have no player-facing OptionRows
 
 	PlayerOptionsString = "string",
-
-	EvalPanePrimary   = "number",
-	EvalPaneSecondary = "number",
 }
 
 -- -----------------------------------------------------------------------
 
-local theme_name = THEME:GetThemeDisplayName()
+local theme_name = "Simply Love" -- Share Simply Love user preferences
 local filename =  theme_name .. " UserPrefs.ini"
+
+
+-- Function called when a [GUEST] joins during SSM, either by late joining or via the fast
+-- profile switcher. It does two things:
+-- 1) properly reset profile state (e.g. modifiers), and
+-- 2) persist any state that should survive a profile switch (e.g., session history
+--    in SL[pn].Stages with songs played for displaying on ScreenEvaluationSummary).
+-- LoadProfileCustom takes care of this for persistent profiles.
+LoadGuest = function(player)
+	GAMESTATE:ResetPlayerOptions(player)
+	local pn = ToEnumShortString(player)
+	local stages = SL[pn].Stages
+	SL[pn]:initialize()
+	SL[pn].Stages = stages
+end
+
 
 -- function assigned to "CustomLoadFunction" under [Profile] in metrics.ini
 LoadProfileCustom = function(profile, dir)
@@ -70,15 +114,26 @@ LoadProfileCustom = function(profile, dir)
 		end
 	end
 
+	if pn then
+		-- Remember and persist stats about songs played across profile switches
+		local stages = SL[pn].Stages
+
+		SL[pn]:initialize()
+		ParseGrooveStatsIni(player)
+		ReadItlFile(player)
+
+		SL[pn].Stages = stages
+	end
+
 	if pn and FILEMAN:DoesFileExist(path) then
 		filecontents = IniFile.ReadFile(path)[theme_name]
 
 		-- for each key/value pair read in from the player's profile
 		for k,v in pairs(filecontents) do
-			-- ensure that the key has a corresponding key in profile_whitelist
-			if profile_whitelist[k]
-			--  ensure that the datatype of the value matches the datatype specified in profile_whitelist
-			and type(v)==profile_whitelist[k] then
+			-- ensure that the key has a corresponding key in permitted_profile_settings
+			if permitted_profile_settings[k]
+			--  ensure that the datatype of the value matches the datatype specified in permitted_profile_settings
+			and type(v)==permitted_profile_settings[k] then
 				-- if the datatype is string and this key corresponds with an OptionRow in ScreenPlayerOptions
 				-- ensure that the string read in from the player's profile
 				-- is a valid value (or choice) for the corresponding OptionRow
@@ -107,24 +162,44 @@ LoadProfileCustom = function(profile, dir)
 					-- the operator menu's Advanced Options
 					GAMESTATE:GetPlayerState(player):GetPlayerOptions("ModsLevel_Preferred"):FailSetting( GetDefaultFailType() )
 				end
+			end
+		end
+	end
 
-				if k=="EvalPaneSecondary" and type(v)==profile_whitelist.EvalPaneSecondary then
-					SL[pn].EvalPaneSecondary = v
-				elseif k=="EvalPanePrimary" and type(v)==profile_whitelist.EvalPanePrimary then
-					SL[pn].EvalPanePrimary   = v
+
+	-- This will get incremented below so the value is 0-indexed
+	local max_attempt = -1
+	local used_hero_cape = false
+
+	if GAMESTATE:GetMasterPlayerNumber() ~= nil then
+		local player_name = PROFILEMAN:GetPlayerName(GAMESTATE:GetMasterPlayerNumber())
+		if ECS.Players[player_name] ~= nil then
+			-- First try and load the relic_file_path
+			local relic_file_path = dir .. THEME:GetThemeDisplayName() .. "_Player_Relic_Data.lua"
+			if FILEMAN:DoesFileExist(relic_file_path) then	
+				local relic_data = LoadActor(relic_file_path)
+				if relic_data then	
+					ECS.Players[player_name].relics = relic_data	
+				end	
+			end
+
+			-- Then try determining the Speed attempt number
+			local player_id = ECS.Players[player_name].id
+			local ecs_data_path = THEME:GetCurrentThemeDirectory().."ECSData/"
+			local score_pattern = "^(.*)%-(.*)%-(.*)%-SCORE%-(.*)%-(.*)%.txt$"
+
+			for file in ivalues(FILEMAN:GetDirListing(ecs_data_path)) do
+				local _, _, id, mode, attempt = file:match(score_pattern)
+				if id ~= nil and mode ~= nil and attempt ~= nil then
+					if tonumber(id) == player_id and mode == "Speed" then
+						max_attempt = math.max(max_attempt, tonumber(attempt))
+					end
 				end
 			end
 		end
 	end
 
-	local relic_file_path = dir .. "Player_Relic_Data.lua"	
-
-	if FILEMAN:DoesFileExist(relic_file_path) then	
-		local relic_data = LoadActor(relic_file_path)	
-		if relic_data and GAMESTATE:GetMasterPlayerNumber() ~= nil then	
-			ECS.Players[PROFILEMAN:GetPlayerName(GAMESTATE:GetMasterPlayerNumber())].relics = relic_data	
-		end	
-	end	
+	ECS.SpeedAttemptNumber = max_attempt + 1
 
 	return true
 end
@@ -139,7 +214,7 @@ SaveProfileCustom = function(profile, dir)
 			local pn = ToEnumShortString(player)
 			local output = {}
 			for k,v in pairs(SL[pn].ActiveModifiers) do
-				if profile_whitelist[k] and type(v)==profile_whitelist[k] then
+				if permitted_profile_settings[k] and type(v)==permitted_profile_settings[k] then
 					output[k] = v
 				end
 			end
@@ -147,10 +222,12 @@ SaveProfileCustom = function(profile, dir)
 			-- these values are saved outside the SL[pn].ActiveModifiers tables
 			-- and thus won't be handled in the loop above
 			output.PlayerOptionsString = SL[pn].PlayerOptionsString
-			output.EvalPanePrimary   = SL[pn].EvalPanePrimary
-			output.EvalPaneSecondary = SL[pn].EvalPaneSecondary
 
 			IniFile.WriteFile( path, {[theme_name]=output} )
+
+			-- Write to the ITL file if we need to.
+			-- This is relevant for memory cards.
+			WriteItlFile(player)
 			break
 		end
 	end
@@ -165,22 +242,47 @@ GetAvatarPath = function(profileDirectory, displayName)
 
 	if type(profileDirectory) ~= "string" then return end
 
-	-- check the profile directory for "avatar.png" first (or "avatar.jpg", etc.)
-	local path = ActorUtil.ResolvePath(profileDirectory .. "avatar", 1, true)
-	          -- support avatars from Hayoreo's Digital Dance, which uses "Profile Picture.png" in profile dir
-	          or ActorUtil.ResolvePath(profileDirectory .. "profile picture", 1, true)
-	          -- support SM5.3's avatar location to ease the eventual transition
-	          or (displayName and displayName ~= "" and ActorUtil.ResolvePath("/Appearance/Avatars/" .. displayName, 1, true) or nil)
+	local path = nil
 
-	if path and ActorUtil.GetFileType(path) == "FileType_Bitmap" then
-		return path
+	-- sequence matters here
+	-- prefer png first, then jpg, then jpeg, etc.
+	-- (note that SM5 does not support animated gifs at this time, so SL doesn't either)
+	-- TODO: investigate effects (memory footprint, fps) of allowing movie files as avatars in SL
+	local extensions = { "png", "jpg", "jpeg", "bmp", "gif" }
+
+	-- prefer an avatar named:
+	--    "avatar" in the player's profile directory (preferred by Simply Love)
+	--    then "profile picture" in the player's profile directory (used by Digital Dance)
+	--    then (whatever the profile's DisplayName is) in /Appearance/Avatars/ (used in OutFox?)
+	local paths = {
+		("%savatar"):format(profileDirectory),
+		("%sprofile picture"):format(profileDirectory),
+		("/Appearance/Avatars/%s"):format(displayName)
+	}
+
+	for _, path in ipairs(paths) do
+		for _, extension in ipairs(extensions) do
+			local avatar_path = ("%s.%s"):format(path, extension)
+
+			if FILEMAN:DoesFileExist(avatar_path)
+			and ActorUtil.GetFileType(avatar_path) == "FileType_Bitmap"
+			then
+				-- return the first valid avatar path that is found
+				return avatar_path
+			end
+		end
 	end
+
+	-- or, return nil if no avatars were found in any of the permitted paths
+	return nil
 end
 
 -- -----------------------------------------------------------------------
 -- returns a path to a player's profile avatar, or nil if none is found
 
 GetPlayerAvatarPath = function(player)
+	if not player then return end
+
 	local profile_slot = {
 		[PLAYER_1] = "ProfileSlot_Player1",
 		[PLAYER_2] = "ProfileSlot_Player2"

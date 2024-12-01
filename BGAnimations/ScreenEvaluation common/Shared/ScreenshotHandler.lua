@@ -25,7 +25,10 @@ spr.CodeMessageCommand=function(self, params)
 		-- song titles can be very long, and the engine's SaveScreenshot() function
 		-- is already hardcoded to make the filename long via DateTime::GetNowDateTime()
 		-- so, let's use only the first 10 characters of the title in the screenshot filename
-		title = title:sub(1,10)
+		title = title:utf8sub(1,10)
+
+		-- substitute all symbols with underscores to avoid file name conflicts
+		title = title:gsub("%W", "_")
 
 		-- organize screenshots Love into directories, like...
 		--      ./Screenshots/Simply_Love/2020/04-April/DVNO-2020-04-22_175951.png

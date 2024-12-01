@@ -9,12 +9,15 @@ local NoteFieldIsCentered = (GetNotefieldX(player) == _screen.cx)
 
 local stylename = GAMESTATE:GetCurrentStyle():GetName()
 
-if (SL[pn].ActiveModifiers.DataVisualizations ~= "Step Statistics")
-or (SL.Global.GameMode == "Casual")
-or (GetNotefieldWidth() > _screen.w/2)
-or (NoteFieldIsCentered and not IsUsingWideScreen())
-or (not IsUltraWide and stylename ~= "single")
-or (    IsUltraWide and not (stylename == "single" or stylename == "versus"))
+if (not IsUltraWide and stylename == "versus")
+	or (not ThemePrefs.Get("EnableTournamentMode") and
+	    SL[pn].ActiveModifiers.DataVisualizations ~= "Step Statistics")
+	or (ThemePrefs.Get("EnableTournamentMode") and ThemePrefs.Get("StepStats") == "Hide")
+	or (SL.Global.GameMode == "Casual")
+	or (GetNotefieldWidth() > _screen.w/2)
+	or (NoteFieldIsCentered and not IsUsingWideScreen())
+	or (not IsUltraWide and stylename ~= "single")
+	or (    IsUltraWide and not (stylename == "single" or stylename == "versus"))
 then
 	return
 end
@@ -28,7 +31,7 @@ local sidepane_width  = _screen.w/2
 local sidepane_pos_x  = _screen.w * (player==PLAYER_1 and 0.75 or 0.25)
 
 if not IsUltraWide then
-	if NoteFieldIsCentered and IsUsingWideScreen()  then
+	if NoteFieldIsCentered and IsUsingWideScreen() then
 		sidepane_width = (_screen.w - GetNotefieldWidth()) / 2
 
 		if player==PLAYER_1 then
@@ -49,7 +52,6 @@ else
 		end
 	end
 end
-
 
 -- -----------------------------------------------------------------------
 
@@ -78,7 +80,6 @@ af[#af+1] = Def.ActorFrame{
 				local zoom = scale(GetScreenAspectRatio(), 16/10, 16/9, zoomfactor.sixteen_ten, zoomfactor.sixteen_nine)
 				self:zoom( zoom )
 			end
-
 		else
 			if #GAMESTATE:GetHumanPlayers() > 1 then
 				self:zoom(zoomfactor.ultrawide):addy(-55)
@@ -87,9 +88,10 @@ af[#af+1] = Def.ActorFrame{
 	end,
 
 	LoadActor("./Banner.lua", player),
-	LoadActor("./JudgmentLabels.lua", player),
-	LoadActor("./JudgmentNumbers.lua", player),
+	LoadActor("./TapNoteJudgments.lua", {player, true}), -- second argument is if it has labels or not
+	LoadActor("./HoldsMinesRolls.lua", player),
 	LoadActor("./Time.lua", player),
+	LoadActor("./Scorebox.lua", player)
 }
 
 af[#af+1] = LoadActor("./DensityGraph.lua", {player, sidepane_width})

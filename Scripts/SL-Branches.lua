@@ -124,7 +124,6 @@ Branch.AfterSelectPlayMode = function()
 	return SelectMusicOrCourse()
 end
 
-
 Branch.AfterGameplay = function()
 	if THEME:GetMetric("ScreenHeartEntry", "HeartEntryEnabled") then
 		local go_to_heart= false
@@ -166,15 +165,13 @@ Branch.AfterSelectMusic = function()
 				local group_name = song:GetGroupName()
 
 				-- Using an unknown profile, just go straight to ScreenGameplay.
-				if PlayerIsUpper() == nil then
+				if GetDivision() == nil then
 					return "ScreenGameplay"
 				end
 
-				if (PlayerIsUpper() and
-						((ECS.Mode == "ECS" and group_name == "ECS9 - Upper") or
-						(ECS.Mode == "Marathon" and group_name == "ECS9 - Upper Marathon")) or
-					(not PlayerIsUpper() and
-						group_name == "ECS9 - Lower")) then
+				-- IsPlayingFromPackForDivision generally also considers speed, but we
+				-- have te if check above.
+				if IsPlayingFromPackForDivision() or IsPlayingMarathon() then
 					-- Only go to ScreenEquipRelics if it's a valid song for the player.
 					return "ScreenEquipRelics"
 				else
@@ -186,7 +183,7 @@ Branch.AfterSelectMusic = function()
 				return "ScreenEquipRelics"
 			end
 		else
-			-- No need to select relics in warmup or freeplay.
+			-- No need to select relics in warmup or freeplay or speed.
 			return "ScreenGameplay"
 		end
 	end

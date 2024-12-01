@@ -1,4 +1,4 @@
-local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/Stars"
+local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/"..ThemePrefs.Get("VisualStyle")
 local SongOrCourse = GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentCourse() or GAMESTATE:GetCurrentSong()
 
 local banner = {
@@ -20,9 +20,9 @@ if SongOrCourse and SongOrCourse:HasBanner() then
 		Name="Banner",
 		InitCommand=function(self)
 			if GAMESTATE:IsCourseMode() then
-				self:LoadFromCourse( GAMESTATE:GetCurrentCourse() )
+				self:LoadFromCourse( GAMESTATE:GetCurrentCourse() ):animate(false)
 			else
-				self:LoadFromSong( GAMESTATE:GetCurrentSong() )
+				self:LoadFromSong( GAMESTATE:GetCurrentSong() ):animate(false)
 			end
 			self:y(66):setsize(banner.width, 164):zoom(banner.zoom)
 		end,
@@ -36,7 +36,12 @@ end
 
 -- quad behind the song/course title text
 af[#af+1] = Def.Quad{
-	InitCommand=function(self) self:diffuse(color("#1E282F")):setsize(banner.width,25):zoom(banner.zoom) end,
+	InitCommand=function(self) 
+		self:diffuse(color("#1E282F")):setsize(banner.width,25):zoom(banner.zoom)
+		if ThemePrefs.Get("VisualStyle") == "Technique" then
+			self:diffusealpha(0.5)
+		end
+	end,
 }
 
 -- song/course title text

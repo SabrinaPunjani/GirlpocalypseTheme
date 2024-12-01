@@ -52,7 +52,7 @@ end
 -- when to use Choices() vs. Values()
 --
 -- Each OptionRow needs stringified choices to present to the player.  Sometimes using hardcoded strings
--- is okay. For example, SpeedModType choices (x, C, M) are the same in English as in French.
+-- is okay. For example, SpeedModType choices (X, C, M) are the same in English as in French.
 --
 -- Other times, we need to be able to localize the choices presented to the player but also
 -- maintain an internal value that code within the theme can rely on regardless of language.
@@ -100,7 +100,34 @@ local Overrides = {
 
 	-------------------------------------------------------------------------
 	SpeedModType = {
-		Choices = { "X", "C", "M" },
+		Values = function()
+			-- if ThemePrefs.Get("EnableTournamentMode") and ThemePrefs.Get("EnforceNoCmod") then
+			-- 	local song = GAMESTATE:GetCurrentSong()
+			-- 	if song then
+			-- 		if (song:GetDisplayFullTitle():lower():match("no cmod") or
+			-- 			song:GetTranslitFullTitle():lower():match("no cmod")) then
+			-- 				-- Put "M" first so that the CMods will automatically change into MMods instead of XMods.
+			-- 				-- NOTE(teejusb): This only gets applied if the player goes into the options menu.
+			-- 				-- We also enforce this in screen gameplay.
+			-- 				return { "M", "X" }
+			-- 		end
+			-- 	end
+			-- end
+
+			-- NOTE(teejusb): We could remove "C" as an option in Tournament mode + Enforce No Cmod (like above),
+			-- but consider the following:
+			-- 
+			-- 1. Player has a CMod set
+			-- 2. Player plays a No CMod song where it auto converts to MMod.
+			--
+			-- It would be nice for the it to automatically go back to CMod if possible.
+			-- Removing "C" as an option makes it so the player will need to explicitly set it back if they had
+			-- previously entered the options menu.
+			--
+			-- Keeping the option, while making it the functionality more opaque, I think is better QOL where players
+			-- in a tournament can keep everything on CMod and it'll auto-convert to MMod as needed.
+			return { "X", "C", "M" }
+		end,
 		ExportOnChange = true,
 		LayoutType = "ShowOneInRow",
 		SaveSelections = function(self, list, pn)
@@ -108,7 +135,7 @@ local Overrides = {
 				if list[i] then
 					-- Broadcast a message that ./BGAnimations/ScreenPlayerOptions overlay.lua will be listening for
 					-- so it can hackishly modify the single BitmapText actor used in the SpeedMod optionrow
-					MESSAGEMAN:Broadcast('SpeedModType'..ToEnumShortString(pn)..'Set', {SpeedModType=self.Choices[i], Player=pn})
+					MESSAGEMAN:Broadcast('SpeedModType'..ToEnumShortString(pn)..'Set', {SpeedModType=self.Values[i], Player=pn})
 				end
 			end
 		end
@@ -138,6 +165,7 @@ local Overrides = {
 				local game = GAMESTATE:GetCurrentGame():GetName()
 
 				-- Apologies, midiman. :(
+				-- Most of these are StepMania 5 stock note skins
 				local stock = {
 					dance = {
 						"default", "delta", "easyv2", "exactv2", "lambda", "midi-note",
@@ -153,8 +181,40 @@ local Overrides = {
 					kb7 = {
 						"default", "orbital", "retrobar", "retrobar-iidx",
 						"retrobar-o2jam", "retrobar-razor", "retrobar-razor_o2"
+					},
+					techno = {
+						"default"
 					}
 				}
+
+				-- additional OutFox stock note skins
+				if IsOutFox() then
+					local stockOutfox = {
+						dance = {
+							"defaultsm5", "delta2019", "outfox-itg", "outfox-note",
+							"paw"
+						},
+						pump = {
+							"defaultsm5", "pawprint", "rhythmsm5"
+						},
+						global = {
+							"broadhead", "crystal", "crystal4k", "exact3d", "fourv2",
+							"glider-note", "paws", "shadowtip"
+						}
+					}
+
+					if stockOutfox[game] then
+						for name in ivalues(stockOutfox[game]) do
+							table.insert(stock[game], name)
+						end
+					end
+					if stock[game] then
+						for name in ivalues(stockOutfox.global) do
+							table.insert(stock[game], name)
+						end
+					end
+				end
+
 				if stock[game] then
 					for stock_noteskin in ivalues(stock[game]) do
 						for i=1,#all do
@@ -179,7 +239,7 @@ local Overrides = {
 				if list[i] then mods.NoteSkin = val; break end
 			end
 			-- Broadcast a message that ./Graphics/OptionRow Frame.lua will be listening for so it can change the NoteSkin preview
-			MESSAGEMAN:Broadcast('NoteSkinChanged', {Player=pn, NoteSkin=mods.NoteSkin})
+			MESSAGEMAN:Broadcast("RefreshActorProxy", {Player=pn, Name="NoteSkin", Value=mods.NoteSkin})
 			playeroptions:NoteSkin( mods.NoteSkin )
 		end
 	},
@@ -187,15 +247,15 @@ local Overrides = {
 	JudgmentGraphic = {
 		LayoutType = "ShowOneInRow",
 		ExportOnChange = true,
-		Choices = function() return map(StripSpriteHints, GetJudgmentGraphics(SL.Global.GameMode)) end,
-		Values = function() return GetJudgmentGraphics(SL.Global.GameMode) end,
+		Choices = function() return map(StripSpriteHints, GetJudgmentGraphics()) end,
+		Values = function() return GetJudgmentGraphics() end,
 		SaveSelections = function(self, list, pn)
 			local mods = SL[ToEnumShortString(pn)].ActiveModifiers
 			for i, val in ipairs(self.Values) do
 				if list[i] then mods.JudgmentGraphic = val; break end
 			end
 			-- Broadcast a message that ./Graphics/OptionRow Frame.lua will be listening for so it can change the Judgment preview
-			MESSAGEMAN:Broadcast("JudgmentGraphicChanged", {Player=pn, JudgmentGraphic=StripSpriteHints(mods.JudgmentGraphic)})
+			MESSAGEMAN:Broadcast("RefreshActorProxy", {Player=pn, Name="JudgmentGraphic", Value=StripSpriteHints(mods.JudgmentGraphic)})
 		end
 	},
 	-------------------------------------------------------------------------
@@ -210,7 +270,7 @@ local Overrides = {
 				if list[i] then mods.HoldJudgment = val; break end
 			end
 			-- Broadcast a message that ./Graphics/OptionRow Frame.lua will be listening for so it can change the HoldJudgment preview
-			MESSAGEMAN:Broadcast("HoldJudgmentChanged", {Player=pn, HoldJudgment=StripSpriteHints(mods.HoldJudgment)})
+			MESSAGEMAN:Broadcast("RefreshActorProxy", {Player=pn, Name="HoldJudgment", Value=StripSpriteHints(mods.HoldJudgment)})
 		end
 	},
 	-------------------------------------------------------------------------
@@ -224,7 +284,7 @@ local Overrides = {
 				if list[i] then mods.ComboFont = val; break end
 			end
 			-- Broadcast a message that ./Graphics/OptionRow Frame.lua will be listening for so it can change the ComboFont preview
-			MESSAGEMAN:Broadcast("ComboFontChanged", {Player=pn, ComboFont=mods.ComboFont})
+			MESSAGEMAN:Broadcast("RefreshActorProxy", {Player=pn, Name="ComboFont", Value=mods.ComboFont})
 		end
 	},
 	-------------------------------------------------------------------------
@@ -257,16 +317,15 @@ local Overrides = {
 	-------------------------------------------------------------------------
 	MusicRate = {
 		Choices = function()
-			local first	= 0.05
-			local last 	= 2
+			local first	= 1
+			local last 	= 3
 			local step 	= 0.01
-
-			return stringify( range(first, last, step), "%g")
+			return stringify( range(first, last, step), "%.02f")
 		end,
 		ExportOnChange = true,
 		OneChoiceForAllPlayers = true,
 		LoadSelections = function(self, list, pn)
-			local rate = ("%g"):format( SL.Global.ActiveModifiers.MusicRate )
+			local rate = ("%.02f"):format( SL.Global.ActiveModifiers.MusicRate )
 			local i = FindInTable(rate, self.Choices) or 1
 			list[i] = true
 			return list
@@ -296,6 +355,55 @@ local Overrides = {
 			end
 
 			MESSAGEMAN:Broadcast("MusicRateChanged")
+			-- Broadcast a message that ./Graphics/OptionRow Frame.lua will be listening for so it can update ActorProxies
+			-- in the MusicRate OptionRow for split BPMs if needed
+			MESSAGEMAN:Broadcast("RefreshActorProxy", {Player=pn, Name="MusicRate", Value=""})
+		end
+	},
+	-------------------------------------------------------------------------
+	MarathonMR = {
+		Choices = function()
+			local first	= 0.85
+			local last 	= 1.16
+			local step 	= 0.01
+			return stringify( range(first, last, step), "%.02f")
+		end,
+		ExportOnChange = true,
+		OneChoiceForAllPlayers = true,
+		LoadSelections = function(self, list, pn)
+			local rate = ("%.02f"):format( SL.Global.ActiveModifiers.MusicRate )
+			local i = FindInTable(rate, self.Choices) or 1
+			list[i] = true
+			return list
+		end,
+		SaveSelections = function(self, list, pn)
+
+			local mods = SL.Global.ActiveModifiers
+
+			for i=1,#self.Choices do
+				if list[i] then
+					mods.MusicRate = tonumber( self.Choices[i] )
+				end
+			end
+
+			local topscreen = SCREENMAN:GetTopScreen():GetName()
+
+			-- Use the older GameCommand interface for applying rate mods in Edit Mode;
+			-- it seems to be the only way (probably due to how broken Edit Mode is, in general).
+			-- As an unintentional side-effect of setting musicrate mods this way, they STAY set
+			-- (between songs, between screens, etc.) until you manually change them.  This is (probably)
+			-- not the desired behavior in EditMode, so when users change between different songs in EditMode,
+			-- always reset the musicrate mod.  See: ./BGAnimations/ScreenEditMeny underlay.lua
+			if topscreen == "ScreenEditOptions" then
+				GAMESTATE:ApplyGameCommand("mod," .. mods.MusicRate .."xmusic")
+			else
+				GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):MusicRate( mods.MusicRate )
+			end
+
+			MESSAGEMAN:Broadcast("MusicRateChanged")
+			-- Broadcast a message that ./Graphics/OptionRow Frame.lua will be listening for so it can update ActorProxies
+			-- in the MusicRate OptionRow for split BPMs if needed
+			MESSAGEMAN:Broadcast("RefreshActorProxy", {Player=pn, Name="MusicRate", Value=""})
 		end
 	},
 	-------------------------------------------------------------------------
@@ -364,6 +472,71 @@ local Overrides = {
 			end
 		end
 	},
+	FaPlus = {
+		SelectType = "SelectMultiple",
+		Values = function()
+			-- 1. Still allow the player to toggle the FA+ window during gameplay in Tournament Mode since
+			--    some might find it distracting. We should still display it in step stats if it's enabled
+			--    though.
+			-- 2. EX score/ITG score is forced in Tournament Mode so remove the option.
+			-- 3. FA Plus Pane should always be shown in Tournament Mode to prevent issues with
+			--    potentially crucial information.
+			if ThemePrefs.Get("EnableTournamentMode") then
+				return { "ShowFaPlusWindow" }
+			end
+
+			if SL.Global.GameMode == "FA+" then
+				return { "ShowEXScore" }
+			end
+
+			return { "ShowFaPlusWindow", "ShowEXScore", "ShowFaPlusPane" }
+		end,
+		LoadSelections = function(self, list, pn)
+			local mods = SL[ToEnumShortString(pn)].ActiveModifiers
+			if ThemePrefs.Get("EnableTournamentMode") then
+				list[1] = mods.ShowFaPlusWindow or false
+				return list
+			end
+
+			if SL.Global.GameMode == "FA+" then
+				list[1] = mods.ShowEXScore or false
+				return list
+			end		
+
+			list[1] = mods.ShowFaPlusWindow or false
+			list[2] = mods.ShowEXScore or false
+			list[3] = mods.ShowFaPlusPane and true
+			return list
+		end,
+		SaveSelections = function(self, list, pn)
+			local sl_pn = SL[ToEnumShortString(pn)]
+			local mods = sl_pn.ActiveModifiers
+
+			if ThemePrefs.Get("EnableTournamentMode") then
+				mods.ShowFaPlusWindow = list[1]
+				mods.ShowEXScore = ThemePrefs.Get("ScoringSystem") == "EX"
+				mods.ShowFaPlusPane = true
+				-- Default to FA+ pane in Tournament Mode
+				sl_pn.EvalPanePrimary = 2
+				return
+			end
+
+			if SL.Global.GameMode == "FA+" then
+				-- always disable in FA+ mode since it's handled engine side.
+				mods.ShowFaPlusWindow = false
+				mods.ShowEXScore = list[1]
+				-- the main score pane is already the FA+ pane
+				mods.ShowFaPlusPane = false
+				return
+			end
+
+			mods.ShowFaPlusWindow = list[1]
+			mods.ShowEXScore = list[2]
+			mods.ShowFaPlusPane = list[3]
+			-- Default to FA+ pane if either options are active.
+			sl_pn.EvalPanePrimary = ((list[1] or list[2]) and list[3]) and 2 or 1
+		end
+	},
 	-------------------------------------------------------------------------
 	Hide = {
 		SelectType = "SelectMultiple",
@@ -407,14 +580,16 @@ local Overrides = {
 			local IsUltraWide = (GetScreenAspectRatio() > 21/9)
 			local mpn = GAMESTATE:GetMasterPlayerNumber()
 
-			-- if not ultrawide, StepStats only in single (not versus, not double)
-			if (not IsUltraWide and style and style:GetName() ~= "single")
-			-- if ultrawide, StepStats only in single and versus (not double)
-			or (IsUltraWide and style and not (style:GetName()=="single" or style:GetName()=="versus"))
-			-- if the notefield takes up more than half the screen width (e.g. single + Center1Player + 4:3)
+			-- Never available in double
+			if style and style:GetName() == "double"
+			-- In 4:3 versus mode
+			or (not IsUsingWideScreen() and style and style:GetName() == "versus")
+			-- if the notefield takes up more than half the screen width
 			or (notefieldwidth and notefieldwidth > _screen.w/2)
-			-- if the notefield is centered with 4:3 aspect ratio (probably don't need both these conditions)
+			-- if the notefield is centered with 4:3 aspect ratio
 			or (mpn and GetNotefieldX(mpn) == _screen.cx and not IsUsingWideScreen())
+			-- Tournament Mode always enforces whether to display/hide step stats so remove that as an option.
+			or ThemePrefs.Get("EnableTournamentMode")
 			then
 				table.remove(choices, 3)
 			end
@@ -424,7 +599,16 @@ local Overrides = {
 	},
 	-------------------------------------------------------------------------
 	TargetScore = {
-		Values = { 'C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+', 'S-', 'S', 'S+', '☆', '☆☆', '☆☆☆', '☆☆☆☆', 'Machine best', 'Personal best' },
+		Values = function()
+			local t = {}
+			-- "GradeTier16" to "GradeTier01"
+			for i=16,1,-1 do
+				table.insert(t, ("GradeTier%02d"):format(i))
+			end
+			table.insert(t, "Machine best")
+			table.insert(t, "Personal best")
+			return t
+		end,
 		LoadSelections = function(self, list, pn)
 			local i = tonumber(SL[ToEnumShortString(pn)].ActiveModifiers.TargetScore) or 11
 			list[i] = true
@@ -445,22 +629,57 @@ local Overrides = {
 		SelectType = "SelectMultiple",
 		Values = function()
 			-- GameplayExtras will be presented as a single OptionRow when WideScreen
-			local vals = { "ColumnFlashOnMiss", "SubtractiveScoring", "Pacemaker", "MissBecauseHeld", "NPSGraphAtTop" }
+			local vals = { "ColumnFlashOnMiss", "SubtractiveScoring", "Pacemaker", "NPSGraphAtTop" }
 
 			-- if not WideScreen (traditional DDR cabinets running at 640x480)
-			-- remove the last two choices and show an additional OptionRow with just those two
+			-- remove the last two choices to be appended an additional OptionRow (GameplayExtrasB below).
 			if not IsUsingWideScreen() then
-				table.remove(vals, 5)
 				table.remove(vals, 4)
 			end
 			return vals
 		end,
 	},
-
-	-- this is defined in metrics.ini to only appear when not IsUsingWideScreen()
 	GameplayExtrasB = {
 		SelectType = "SelectMultiple",
-		Values = { "MissBecauseHeld", "NPSGraphAtTop" }
+		Values = function()
+			local vals = {}
+			if IsUsingWideScreen() then
+				vals = { "JudgmentTilt", "ColumnCues" }
+				if IsServiceAllowed(SL.GrooveStats.GetScores) then
+					vals[#vals+1] = "DisplayScorebox"
+				end
+			else
+				-- Add in the two removed options if not in WideScreen.
+				vals = { "NPSGraphAtTop", "JudgmentTilt", "ColumnCues" }
+			end
+			return vals
+		end
+	},
+	GameplayExtrasC = {
+		SelectType = "SelectMultiple",
+		Values = function()
+			local vals = {}
+			if not IsUsingWideScreen() and IsServiceAllowed(SL.GrooveStats.GetScores) then
+				vals = { "DisplayScorebox" }
+			end
+			return vals
+		end
+	},
+	ErrorBar = {
+		Values = { "None", "Colorful", "Monochrome", "Text" },
+	},-------------------------------------------------------------------------
+	ErrorBarTrim = {
+		Values = { "Off", "Great", "Excellent" },
+		Choices = function()
+			local tns = "TapNoteScore"
+			local t = {THEME:GetString("SLPlayerOptions","Off"), THEME:GetString(tns,"W3"), THEME:GetString(tns,"W2")}
+			return t
+		end,
+	},
+	-------------------------------------------------------------------------
+	ErrorBarOptions = {
+		SelectType = "SelectMultiple",
+		Values = { "ErrorBarUp", "ErrorBarMultiTick" },
 	},
 	-------------------------------------------------------------------------
 	MeasureCounter = {
@@ -470,6 +689,36 @@ local Overrides = {
 	MeasureCounterOptions = {
 		SelectType = "SelectMultiple",
 		Values = { "MeasureCounterLeft", "MeasureCounterUp", "HideLookahead" },
+	},
+	-------------------------------------------------------------------------
+	MeasureLines = {
+		Values = { "Off", "Measure", "Quarter", "Eighth" },
+	},
+	-------------------------------------------------------------------------
+	VisualDelay = {
+		Choices = function()
+			local first	= -100
+			local last 	= 100
+			local step 	= 1
+			return stringify( range(first, last, step), "%gms")
+		end,
+		ExportOnChange = true,
+		LayoutType = "ShowOneInRow",
+		SaveSelections = function(self, list, pn)
+			local mods, playeroptions = GetModsAndPlayerOptions(pn)
+
+			for i=1,#self.Choices do
+				if list[i] then
+					mods.VisualDelay = self.Choices[i]
+				end
+			end
+			playeroptions:VisualDelay( mods.VisualDelay:gsub("ms","")/1000 )
+		end
+	},
+	-------------------------------------------------------------------------
+	TimingWindowOptions = {
+		SelectType = "SelectMultiple",
+		Values = { "HideEarlyDecentWayOffJudgments", "HideEarlyDecentWayOffFlash" }
 	},
 	-------------------------------------------------------------------------
 	TimingWindows = {
@@ -485,36 +734,122 @@ local Overrides = {
 			local tns = "TapNoteScore" .. (SL.Global.GameMode=="ITG" and "" or SL.Global.GameMode)
 			local t = {THEME:GetString("SLPlayerOptions","None")}
 			-- assume pluralization via terminal s
-			t[2] = THEME:GetString(tns,"W5").."s"
-			t[3] = THEME:GetString(tns,"W4").."s + "..t[2]
-			t[4] = THEME:GetString(tns,"W1").."s + "..THEME:GetString(tns,"W2").."s"
+			local idx = 2
+			t[idx] = THEME:GetString(tns,"W5").."s"
+			idx = idx + 1
+			if SL.Global.GameMode=="ITG" then
+				t[idx] = THEME:GetString(tns,"W4").."s + "..t[idx-1]
+				idx = idx + 1
+			end
+			t[idx] = THEME:GetString(tns,"W1").."s + "..THEME:GetString(tns,"W2").."s"
 			return t
 		end,
-		OneChoiceForAllPlayers = true,
 		LoadSelections = function(self, list, pn)
-			local windows = SL.Global.ActiveModifiers.TimingWindows
+			local mods, playeroptions = GetModsAndPlayerOptions(pn)
+
+			-- First determine the set of actual enabled windows.
+			local windows = {true,true,true,true,true}
+			local disabledWindows = playeroptions:GetDisabledTimingWindows()
+			for w in ivalues(disabledWindows) do
+				windows[tonumber(ToEnumShortString(w):sub(-1))] = false
+			end
+
+			-- Compare them to any of our available selections
+			local matched = false
 			for i=1,#list do
 				local all_match = true
 				for w,window in ipairs(windows) do
 					if window ~= self.Values[i][w] then all_match = false; break end
 				end
-				if all_match then list[i] = true; break end
+				if all_match then
+					matched = true
+					list[i] = true
+					mods.TimingWindows = windows
+					break
+				end
+			end
+
+			-- It's possible one may have manipulated the available windows through playeroptions elsewhere.
+			-- If the TimingWindows set via LoadSelections is not one of our valid choices then default
+			-- to a known value (all windows enabled).
+			if not matched then
+				mods.TimingWindows = {true,true,true,true,true}
+				playeroptions:ResetDisabledTimingWindows()
+				list[1] = true
 			end
 			return list
 		end,
 		SaveSelections = function(self, list, pn)
-			local gmods = SL.Global.ActiveModifiers
+			local mods, playeroptions = GetModsAndPlayerOptions(pn)
 			for i=1,#list do
 				if list[i] then
-					gmods.TimingWindows = self.Values[i]
-					for w=1,5 do
-						if self.Values[i][w] then
-							PREFSMAN:SetPreference("TimingWindowSecondsW"..w, SL.Preferences[SL.Global.GameMode]["TimingWindowSecondsW"..w])
-						else
-							local prev = (w > 1 and PREFSMAN:GetPreference("TimingWindowSecondsW"..(w-1)) or -math.abs(SL.Preferences[SL.Global.GameMode].TimingWindowAdd))
-							PREFSMAN:SetPreference("TimingWindowSecondsW"..w, prev)
+					mods.TimingWindows = self.Values[i]
+					playeroptions:ResetDisabledTimingWindows()
+					for i,enabled in ipairs(mods.TimingWindows) do
+						if not enabled then
+							playeroptions:DisableTimingWindow("TimingWindow_W"..i)
 						end
 					end
+				end
+			end
+		end
+	},
+	-------------------------------------------------------------------------
+	NoteFieldOffsetX = {
+		LayoutType = "ShowOneInRow",
+		ExportOnChange = true,
+		Choices = function()
+			local first	= 0
+			local last 	= 50
+			local step 	= 1
+
+			return range(first, last, step)
+		end,
+		LoadSelections = function(self, list, pn)
+			local val = tonumber(SL[ToEnumShortString(pn)].ActiveModifiers.NoteFieldOffsetX) or 0
+			for i,v in ipairs(self.Choices) do
+				if v == val then
+					list[i] = true
+					break
+				end
+			end
+			return list
+		end,
+		SaveSelections = function(self, list, pn)
+			for i,v in ipairs(self.Choices) do
+				if list[i] then
+					SL[ToEnumShortString(pn)].ActiveModifiers.NoteFieldOffsetX = v
+					break
+				end
+			end
+		end
+	},
+	-------------------------------------------------------------------------
+	NoteFieldOffsetY = {
+		LayoutType = "ShowOneInRow",
+		ExportOnChange = true,
+		Choices = function()
+			local first	= -50
+			local last 	= 50
+			local step 	= 1
+
+			return range(first, last, step)
+		end,
+		LoadSelections = function(self, list, pn)
+			local val = tonumber(SL[ToEnumShortString(pn)].ActiveModifiers.NoteFieldOffsetY) or 0
+			for i,v in ipairs(self.Choices) do
+				if v == val then
+					list[i] = true
+					break
+				end
+			end
+			return list
+		end,
+		SaveSelections = function(self, list, pn)
+			for i,v in ipairs(self.Choices) do
+				if list[i] then
+					SL[ToEnumShortString(pn)].ActiveModifiers.NoteFieldOffsetY = v
+					break
 				end
 			end
 		end

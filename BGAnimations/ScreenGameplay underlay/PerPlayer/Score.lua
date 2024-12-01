@@ -4,6 +4,8 @@ local pn = ToEnumShortString(player)
 local mods = SL[pn].ActiveModifiers
 local IsUltraWide = (GetScreenAspectRatio() > 21/9)
 local NumPlayers = #GAMESTATE:GetHumanPlayers()
+local IsEX = SL[pn].ActiveModifiers.ShowEXScore
+
 -- -----------------------------------------------------------------------
 -- first, check for conditions where we might not draw the score actor at all
 
@@ -21,12 +23,13 @@ end
 
 local styletype = ToEnumShortString(GAMESTATE:GetCurrentStyle():GetStyleType())
 
+-- scores are not aligned symmetrically around screen.cx for aesthetic reasons
+-- and this is the cause of many code-induced headaches
 local pos = {
 	[PLAYER_1] = { x=(_screen.cx - clamp(_screen.w, 640, 854)/4.3),  y=56 },
 	[PLAYER_2] = { x=(_screen.cx + clamp(_screen.w, 640, 854)/2.75), y=56 },
 }
 
-local dance_points, percent
 local pss = STATSMAN:GetCurStageStats():GetPlayerStageStats(player)
 
 local StepsOrTrail = (GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentTrail(player)) or GAMESTATE:GetCurrentSteps(player)
@@ -51,28 +54,41 @@ local zoom_factor = clamp(scale(GetScreenAspectRatio(), 16/10, 16/9, ar_scale.si
 
 return LoadFont("Wendy/_wendy monospace numbers")..{
 	Text="0.00",
-
 	Name=pn.."Score",
 	InitCommand=function(self)
 		self:valign(1):horizalign(right)
 		self:zoom(0.5)
+		if IsEX then
+			-- If EX Score, let's diffuse it to be the same as the FA+ top window.
+			-- This will make it consistent with the EX Score Pane.
+			self:diffuse(SL.JudgmentColors["FA+"][1])
+		end
 	end,
 
-	-- FIXME: this is out of control and points to the need for a generalized approach
-	--        to positioning and scaling actors based on AspectRatio (4:3, 16:10, 16:9, 21:9),
-	--        Step Stats (drawing or not),
-	--        NPSGraphAtTop (drawing or not),
-	--        Center1Player (see GetNotefieldX() in ./Scripts/SL-Helpers.lua)
-	--        and which players are joined
-
 	BeginCommand=function(self)
+		-----------------------------------------------------------------
+		-- ultrawide with both players joined is really its own layout
+		-- hardcode some numbers for now, return early, and call it a day
+		-- until 21:9 displays become more popular
+		if IsUltraWide and #GAMESTATE:GetHumanPlayers() > 1 then
+			if player==PLAYER_1 then
+				self:x(134)
+			else
+				self:x(_screen.w - 4)
+			end
+
+			self:y( 238 )
+			return
+		end
+		-----------------------------------------------------------------
+
 		-- assume "normal" score positioning first, but there are many reasons it will need to be moved
 		self:xy( pos[player].x, pos[player].y )
 
 		if mods.NPSGraphAtTop and styletype ~= "OnePlayerTwoSides" then
 			-- if NPSGraphAtTop and Step Statistics and not double,
 			-- move the score down into the stepstats pane under
-			-- the jugdgment breakdown
+			-- the judgment breakdown
 			if mods.DataVisualizations=="Step Statistics" then
 				local step_stats = self:GetParent():GetChild("StepStatsPane"..pn)
 
@@ -80,52 +96,23 @@ return LoadFont("Wendy/_wendy monospace numbers")..{
 				-- but current conditions might be such that it won't actually appear.
 				-- Ensure the StepStats ActorFrame is present before trying to traverse it.
 				if step_stats then
-					local judgmentnumbers = step_stats:GetChild("BannerAndData"):GetChild("JudgmentNumbers"):GetChild("")[1]
-
-					-- -----------------------------------------------------------------------
-					-- FIXME: "padding" is a lazy fix for multiple nested ActorFrames having zoom applied and
-					--         me not feeling like recursively crawling the AF tree to factor in each zoom
-					local padding
-
-					if NoteFieldIsCentered then
-						if IsUltraWide then
-							padding = 37
-						else
-							padding = SL_WideScale(-11.5,27)
-						end
-
-					else
-						if IsUltraWide then
-							if NumPlayers > 1 then
-								padding = -2
-							else
-								padding = 37
-							end
-						else
-							padding = 37
-						end
-					end
-
-					-- -----------------------------------------------------------------------
-
-					if IsUsingWideScreen() and not (IsUltraWide and NumPlayers > 1) then
-						-- pad with an additional ~14px for each digit past 4 the stepcount goes
-						-- this keeps the score right-aligned with the right edge of the judgment
-						-- counts in the StepStats pane
-						padding = padding + (digits * 14)
-
+					if player==PLAYER_1 then
 						if NoteFieldIsCentered then
-							padding = clamp(padding, 0, WideScale(-12,43))
-							self:zoom( self:GetZoom() * zoom_factor )
+							self:x( pos[ OtherPlayer[player] ].x + SL_WideScale( 94, 112.5) )
+						else
+							self:x( pos[ OtherPlayer[player] ].x - SL_WideScale(-84, -60) )
+						end
+
+					-- PLAYER_2
+					else
+						if NoteFieldIsCentered then
+							self:x( pos[ OtherPlayer[player] ].x - 65.5 )
+						else
+							self:x( pos[ OtherPlayer[player] ].x - SL_WideScale(-6, -2))
 						end
 					end
 
-					self:x(step_stats:GetX() + judgmentnumbers:GetX() + padding)
-					if  IsUltraWide and NumPlayers > 1 then
-						self:y(_screen.cy - 2)
-					else
-						self:y( _screen.cy + 42 )
-					end
+					self:y( 282 )
 				end
 
 			-- if NPSGraphAtTop but not Step Statistics
@@ -141,10 +128,21 @@ return LoadFont("Wendy/_wendy monospace numbers")..{
 			end
 		end
 	end,
-	JudgmentMessageCommand=function(self) self:queuecommand("RedrawScore") end,
+	JudgmentMessageCommand=function(self)
+		self:queuecommand("RedrawScore")
+	end,
 	RedrawScoreCommand=function(self)
-		dance_points = pss:GetPercentDancePoints()
-		percent = FormatPercentScore( dance_points ):sub(1,-2)
-		self:settext(percent)
-	end
+		if not IsEX then
+			local dance_points = pss:GetPercentDancePoints()
+			local percent = FormatPercentScore( dance_points ):sub(1,-2)
+			self:settext(percent)
+		end
+	end,
+	ExCountsChangedMessageCommand=function(self, params)
+		if params.Player ~= player then return end
+
+		if IsEX then
+			self:settext(("%.02f"):format(params.ExScore))
+		end
+	end,
 }

@@ -23,16 +23,31 @@ local IsActiveRelic = function(relic)
 	return false
 end
 
--- this works because no single player in ECS has both Order of Ambrosia and Champion Belt
 local GetNumActiveRows = function()
-	local num_active_rows = 2
+	local has_ambrosia = false
+	local has_belt = false
+	local has_amrita = false  -- Marathon only relic
+
 	for active_relic in ivalues(active_relics) do
 		if active_relic.name == "Order of Ambrosia" then
-			num_active_rows = num_active_rows + 2
+			has_ambrosia = true
 		elseif active_relic.name == "Champion Belt" then
-			num_active_rows = num_active_rows + 1
+			has_belt = true
+		elseif active_relic.name == "Order of Amrita" then
+			has_amrita = true
 		end
 	end
+
+	local num_active_rows = 2
+
+	if has_ambrosia and has_belt then
+		num_active_rows = 5
+	elseif has_ambrosia or has_amrita then
+		num_active_rows = 4
+	elseif has_belt then
+		num_active_rows = 3
+	end
+
 	return num_active_rows
 end
 
@@ -47,15 +62,59 @@ for i,player_relic in ipairs(ECS.Players[profile_name].relics) do
 		if master_relic.name == player_relic.name then
 			if not master_relic.is_consumable or player_relic.quantity > 0 then
 				if (ECS.Mode == "ECS" and not master_relic.is_marathon) or (ECS.Mode == "Marathon" and master_relic.is_marathon) then
-					player_relics[#player_relics+1] = {
-						name=master_relic.name,
-						quantity=player_relic.quantity,
-						is_consumable=master_relic.is_consumable,
-						desc=master_relic.desc,
-						effect=master_relic.effect,
-						action=master_relic.action,
-						score=master_relic.score
-					}
+					if master_relic.name == "Dragonball" then
+						if player_relic.quantity > 0 then
+							local all_effects = split("|", master_relic.effect)
+							for i, name_effect in ipairs(all_effects) do
+								if i ~= 1 then
+									local details = split("-", name_effect)
+									local name = details[1]
+									local effect = details[2]
+
+									local action = nil
+									local score = nil
+									if name == "Invulnerability" then
+										action = master_relic.action1
+										score = master_relic.score1
+									elseif name == "Eternal Youth" then
+										action = master_relic.action2
+										score = master_relic.score2
+									elseif name == "Great Power" then
+										action = master_relic.action3
+										score = master_relic.score3
+									else
+										SM("SHOULD NEVER GET HERE! REPORT TO TEEJUSB/ARCHI!")
+									end
+
+									player_relics[#player_relics+1] = {
+										name=master_relic.name.. " - "..name,
+										-- This value is basically unused since we rely on
+										-- ECS.Players[profile_name].relics.quantity as the source
+										-- of truth instead.
+										quantity=player_relic.quantity,
+										is_consumable=master_relic.is_consumable,
+										desc=master_relic.desc,
+										effect=effect,
+										action=action,
+										score=score
+									}
+								end
+							end
+						end
+					else
+						player_relics[#player_relics+1] = {
+							name=master_relic.name,
+							-- This value is basically unused since we rely on
+							-- ECS.Players[profile_name].relics.quantity as the source of 
+							-- truth instead.
+							quantity=player_relic.quantity,
+							is_consumable=master_relic.is_consumable,
+							desc=master_relic.desc,
+							effect=master_relic.effect,
+							action=master_relic.action,
+							score=master_relic.score
+						}
+					end
 				end
 			end
 		end
@@ -138,7 +197,7 @@ local InputHandler = function(event)
 		elseif (event.button == "Select" or
 				event.button == "MenuUp" or
 				((not OnlyDedicatedMenuButtons or ThreeKeyNavigation) and event.button == "Up")) then
-			SOUND:PlayOnce(THEME:GetPathS("", "_prev row.ogg"))
+			SOUND:PlayOnce(THEME:GetPathS("", "_next row.ogg"))
 
 			OptionRowWheels[pn]:scroll_by_amount(-1)
 
@@ -158,9 +217,9 @@ local InputHandler = function(event)
 			if row ~= Rows[#Rows] then
 
 				-- handle menuleft and menu right
-				if event.button == "MenuLeft" then
+				if event.button == "MenuLeft" or event.button == "Left" then
 					OptionRowWheels[pn][row]:scroll_by_amount(-1)
-				elseif event.button == "MenuRight" then
+				elseif event.button == "MenuRight" or event.button == "Right" then
 					OptionRowWheels[pn][row]:scroll_by_amount(1)
 				end
 
@@ -179,9 +238,24 @@ local InputHandler = function(event)
 
 					-- create a smaller list out of non-active relics
 					local smaller_list = { {name="(nothing)"} }
+					local used_dragonball = false
+
+					for _relic in ivalues(player_relics) do
+						if _relic.name:match("^Dragonball") and IsActiveRelic(_relic) then
+							used_dragonball = true
+						end
+					end
+
 					for _relic in ivalues(player_relics) do
 						if not IsActiveRelic(_relic) and _relic.name ~= "(nothing)" then
-							smaller_list[#smaller_list+1] = _relic
+							-- Only allow one Dragonball to be selected at a time.
+							if _relic.name:match("^Dragonball") then
+								if not used_dragonball then
+									smaller_list[#smaller_list+1] = _relic
+								end
+							else
+								smaller_list[#smaller_list+1] = _relic
+							end
 						end
 					end
 
@@ -197,19 +271,21 @@ local InputHandler = function(event)
 				for i=GetNumActiveRows()+1, 4 do
 					OptionRowWheels[pn]["Relic"..i]:set_info_set({{name="(nothing)"}}, 1)
 					active_relics[i] = OptionRowWheels[pn]["Relic"..i]:get_info_at_focus_pos()
+					local relic = OptionRowWheels[pn]["Relic"..i]:get_info_at_focus_pos()
+					SCREENMAN:GetTopScreen():GetChild("Overlay"):playcommand( "Relic"..i.."Selected", relic )
 				end
 			end
 
 			local score = 0
+			local ecs_player = ECS.Players[PROFILEMAN:GetPlayerName(GAMESTATE:GetMasterPlayerNumber())]
 			if ECS.Mode == "ECS" then
 				local song_name = GAMESTATE:GetCurrentSong():GetDisplayFullTitle()
-				score, _ = CalculateScoreForSong(ECS.Players[PROFILEMAN:GetPlayerName(GAMESTATE:GetMasterPlayerNumber())], song_name, 0, active_relics, false)
+				score, _ = CalculateScoreForSong(ecs_player, song_name, --[[score=]]0, active_relics, --[[failed=]]false)
 			elseif ECS.Mode == "Marathon" then
 				for relic in ivalues(active_relics) do
 					if relic.name ~= "(nothing)" then
-						-- All marathon relics return pure numeric values. We don't need to pass any real values to the score function.
 						score = (score +
-							relic.score(--[[ecs_player=]]nil, --[[song_info=]]nil, --[[song_data=]]nil, --[[relics_used]]nil, --[[ap=]]nil))
+							relic.score(ecs_player, --[[song_info=]]nil, --[[song_data=]]nil, active_relics, --[[ap=]]nil, --[[score=]]0))
 					end
 				end
 			end
@@ -290,7 +366,7 @@ local t = Def.ActorFrame{
 			for active_relic in ivalues(active_relics) do
 				if active_relic.name ~= "(nothing)" then
 					table.insert(ECS.Player.Relics, active_relic)
-					active_relic.action()
+					active_relic.action(active_relics)
 				end
 			end
 		end
@@ -354,10 +430,21 @@ t[#t+1] = LoadFont("Common Normal")..{
 	OnCommand=function(self)
 		if ECS.Mode == "ECS" then
 			local song = GAMESTATE:GetCurrentSong()
-			local song_info = PlayerIsUpper() and ECS.SongInfo.Upper or ECS.SongInfo.Lower
+			local song_info = nil
+
+			if GetDivision() == "upper" then
+				song_info = ECS.SongInfo.Upper
+			elseif GetDivision() == "mid" then
+				song_info = ECS.SongInfo.Mid
+			else
+				song_info = ECS.SongInfo.Lower
+			end
+
 			local song_name = song:GetDisplayFullTitle()
 			local song_data = FindEcsSong(song_name, song_info)
-			self:settext(tostring(song_data.dp + song_data.ep + song_data.rp))
+
+			score, _ = CalculateScoreForSong(ECS.Players[PROFILEMAN:GetPlayerName(GAMESTATE:GetMasterPlayerNumber())], song_name, 0, {}, false)
+			self:settext(tostring(score))
 		end
 	end,
 	UpdateECSScoreMessageCommand=function(self, t)

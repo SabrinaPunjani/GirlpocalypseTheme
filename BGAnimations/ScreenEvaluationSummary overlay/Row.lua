@@ -2,8 +2,8 @@ local position_on_screen = ...
 
 local SongOrCourse, StageNum
 
-local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/Stars"
-local banner_directory = FILEMAN:DoesFileExist(path) and path or THEME:GetPathG("","_FallbackBanners/Stats")
+local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/"..ThemePrefs.Get("VisualStyle")
+local banner_directory = FILEMAN:DoesFileExist(path) and path or THEME:GetPathG("","_FallbackBanners/Arrows")
 
 -- -----------------------------------------------------------------------
 -- this ActorFrame contains elements shared by both players
@@ -80,7 +80,7 @@ t[#t+1] = LoadFont("Common Normal")..{
 			local bpms = StringifyDisplayBPMs(mpn, StepsOrTrail, MusicRate)
 			if MusicRate ~= 1 then
 				-- format a string like "150 - 300 bpm (1.5x Music Rate)"
-				self:settext( ("%s bpm (%gx %s)"):format(bpms, MusicRate, THEME:GetString("OptionTitles", "MusicRate")) )
+				self:settext( ("%s bpm (%0.2fx %s)"):format(bpms, MusicRate, THEME:GetString("OptionTitles", "MusicRate")) )
 			else
 				-- format a string like "100 - 200 bpm"
 				self:settext( ("%s bpm"):format(bpms))
@@ -95,13 +95,33 @@ t[#t+1] = LoadFont("Common Normal")..{
 -- and that is what we want here.
 --
 -- We shouldn't use something like GAMESTATE:GetHumanPlayers() because players
--- can late-join (and maybe late-unjoin someday soon) and GetHumanPlayers()
--- would return whichever players were currently joined at the time of ScreenEvalSummary.
+-- can late-join (and late-unjoin, and switch) and GetHumanPlayers() would return
+-- whichever players were currently joined at the time of ScreenEvalSummary.
 
+
+-- Before we get to actually populating the per-player stats, check whether we
+-- should also display the name of the profile that was used to play a specific
+-- song.
+--
+-- The rationale is that this should only be done if it helps avoid confusion.
+-- If P1 and P2 were each consistently using a single profile the whole time,
+-- there is no added value in displaying it. On the other hand, if either P1 or
+-- P2 switched profiles over the course of the session, let's make it clear who
+-- obtained which score.
+local displayProfileNames = false
+for player in ivalues( PlayerNumber ) do
+	if #uniqueProfilesUsedForPlayer(ToEnumShortString(player)) > 1 then
+		displayProfileNames = true
+		break
+	end
+end
+
+
+-- Finally, load the actors that will populate the actual player-specific stats.
 for player in ivalues( PlayerNumber ) do
 	-- PlayerStageStats.lua handles player-specific things
 	-- like stepchart difficulty, stepartist, letter grade, and judgment breakdown
-	t[#t+1] = LoadActor("./PlayerStageStats.lua", player)
+	t[#t+1] = LoadActor("./PlayerStageStats.lua", {player, displayProfileNames})
 end
 
 return t

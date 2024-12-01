@@ -2,8 +2,6 @@
 local dark  = {0,0,0,0.9}
 local light = {0.65,0.65,0.65,1}
 
-local settimer_seconds = 60 * 60
-
 
 local ArvinsGambitIsActive = function()
 	for active_relic in ivalues(ECS.Player.Relics) do
@@ -15,7 +13,7 @@ local ArvinsGambitIsActive = function()
 end
 
 if ArvinsGambitIsActive() then
-	settimer_seconds = 20 * 60
+	ECS.SetTimer = 20 * 60
 end
 
 local endgame_warning_has_been_issued = false
@@ -41,12 +39,12 @@ local SecondsToMMSS = function(seconds)
 end
 
 local SessionHasEnded = function(session_seconds)
-	if ECS.Mode == "ECS" and ECS.BreakTimer < 0 then return true end
+	if (ECS.Mode == "ECS" or ECS.Mode == "Speed") and ECS.BreakTimer < 0 then return true end
 
 	if SL.Global.TimeAtSessionStart
-		and (session_seconds > settimer_seconds)
+		and (session_seconds > ECS.SetTimer)
 		and (ECS.Mode == "Warmup" or
-			 (ECS.Mode == "ECS" and SL.Global.Stages.PlayedThisGame >= 7) or
+			 ((ECS.Mode == "ECS" or ECS.Mode == "Speed") and SL.Global.Stages.PlayedThisGame >= 7) or
 			 ArvinsGambitIsActive())
 	then
 		return true
@@ -87,13 +85,28 @@ local Update = function(af, dt)
 		local session_seconds = cur_time - SL.Global.TimeAtSessionStart
 
 		-- if this game session is less than 1 hour in duration so far
-		if session_seconds < settimer_seconds then
+		if session_seconds < ECS.SetTimer then
 			sessiontimer_actor:settext( "SET - " .. SecondsToMMSS(session_seconds) )
 		else
 			sessiontimer_actor:settext( "SET - " .. SecondsToHHMMSS(session_seconds) ):diffuse(1,0,0,1)
 		end
 
 		if DeductFromBreakTimer() then
+			if ECS.TimeToRemoveFromBreakTimer ~= 0 then
+				local mpn = GAMESTATE:GetMasterPlayerNumber()
+				local stats = STATSMAN:GetCurStageStats():GetPlayerStageStats(mpn)
+				local failed = stats:GetFailed()
+
+				if SCREENMAN:GetTopScreen():GetName() == "ScreenEvaluationStage" and failed or
+					SCREENMAN:GetTopScreen():GetName() == "ScreenSelectMusic" and
+					ECS.Player.MixTapesRandomSong == nil then
+					SM(SecondsToMSS(ECS.TimeToRemoveFromBreakTimer).." removed from Break Timer")
+					-- Adjust the breaktimer_at_screen_start value to account for the time removed
+					breaktimer_at_screen_start = breaktimer_at_screen_start - ECS.TimeToRemoveFromBreakTimer
+				end
+				ECS.TimeToRemoveFromBreakTimer = 0
+			end
+
 			ECS.BreakTimer = breaktimer_at_screen_start - (cur_time - seconds_at_screen_start)
 		end
 
@@ -124,8 +137,8 @@ local af = Def.ActorFrame{
 	Name="Header",
 	InitCommand=function(self) self:queuecommand("PostInit") end,
 	PostInitCommand=function(self)
-		-- Setup session timer for ECS, Warmup, and Marathon (only if it's the second attempt).
-		if PREFSMAN:GetPreference("EventMode") and (ECS.Mode == "ECS" or ECS.Mode == "Warmup" or (ECS.Mode == "Marathon" and ArvinsGambitIsActive())) then
+		-- Setup session timer for ECS, Speed, Warmup, and Marathon (only if it's the second attempt).
+		if PREFSMAN:GetPreference("EventMode") and (ECS.Mode == "ECS" or ECS.Mode == "Speed" or ECS.Mode == "Warmup" or (ECS.Mode == "Marathon" and ArvinsGambitIsActive())) then
 			-- TimeAtSessionStart will be reset to nil between game sessions
 			-- thus, if it's currently nil, we're loading ScreenSelectMusic
 			-- for the first time this particular game session
@@ -146,8 +159,12 @@ local af = Def.ActorFrame{
 	Def.Quad{
 		InitCommand=function(self)
 			self:zoomto(_screen.w, 32):vertalign(top):x(_screen.cx)
-			if DarkUI() then
+			if ThemePrefs.Get("VisualStyle") == "SRPG8" then
+				self:diffuse(GetCurrentColor(true))
+			elseif DarkUI() then
 				self:diffuse(dark)
+			elseif ThemePrefs.Get("VisualStyle") == "Technique" then
+				self:diffusealpha(0)
 			else
 				self:diffuse(light)
 			end
@@ -157,6 +174,27 @@ local af = Def.ActorFrame{
 			if SL.Global.GameMode == "Casual" and (topscreen == "ScreenEvaluationStage" or topscreen == "ScreenEvaluationSummary") then
 				self:diffuse(dark)
 			end
+			if ThemePrefs.Get("VisualStyle") == "SRPG8" then
+				self:diffuse(GetCurrentColor(true))
+			end
+			if ThemePrefs.Get("VisualStyle") == "Technique" then
+				if topscreen == "ScreenSelectMusic" and not ThemePrefs.Get("RainbowMode") then
+					self:diffuse(0, 0, 0, 0.5)
+				else
+					self:diffusealpha(0)
+				end
+			end
+			self:visible(topscreen ~= "ScreenCRTTestPatterns")
+		end,
+		ColorSelectedMessageCommand=function(self)
+			if ThemePrefs.Get("VisualStyle") == "SRPG8" then
+				self:diffuse(GetCurrentColor(true))
+			end
+		end,
+		VisualStyleSelectedMessageCommand=function(self)
+			if ThemePrefs.Get("VisualStyle") == "Technique" then
+				self:diffusealpha(0)
+			end
 		end,
 	},
 
@@ -165,10 +203,16 @@ local af = Def.ActorFrame{
 		Text=ScreenString("HeaderText"),
 		InitCommand=function(self) self:diffusealpha(0):horizalign(left):xy(10, 15):zoom( SL_WideScale(0.5,0.6) ) end,
 		OnCommand=function(self) self:sleep(0.1):decelerate(0.33):diffusealpha(1) end,
-		OffCommand=function(self) self:accelerate(0.33):diffusealpha(0) end
+		OffCommand=function(self) self:accelerate(0.33):diffusealpha(0) end,
+		SetHeaderTextMessageCommand=function(self, params)
+			self:settext(params.Text)
+		end,
+		ResetHeaderTextMessageCommand=function(self)
+			self:settext(THEME:GetString(SCREENMAN:GetTopScreen():GetName(), "HeaderText"))
+		end
 	},
 
-	-- Freeplay | Warmup | ECS | Marathon
+	-- Freeplay | Warmup | PracticeSet | ECS | Marathon
 	LoadFont("Wendy/_wendy small")..{
 		Name="GameModeText",
 		InitCommand=function(self)
@@ -197,8 +241,8 @@ local af = Def.ActorFrame{
 	}
 }
 
--- Display session timer for ECS, Warmup, and Marathon (only if it's the second attempt).
-if (ECS.Mode == "ECS" or ECS.Mode == "Warmup" or (ECS.Mode == "Marathon" and ArvinsGambitIsActive())) then
+-- Display session timer for ECS, Speed, Warmup, and Marathon (only if it's the second attempt).
+if (ECS.Mode == "ECS" or ECS.Mode == "Speed" or ECS.Mode == "Warmup" or (ECS.Mode == "Marathon" and ArvinsGambitIsActive())) then
 	af[#af+1] = Def.ActorFrame{
 		OnCommand=function(self)
 			local screen_name = SCREENMAN:GetTopScreen():GetName()
@@ -224,8 +268,8 @@ if (ECS.Mode == "ECS" or ECS.Mode == "Warmup" or (ECS.Mode == "Marathon" and Arv
 		},
 	}
 
-	-- Only add BreakTimer in ECS Mode.
-	if ECS.Mode == "ECS" then
+	-- Only add BreakTimer in ECS/Speed Mode.
+	if ECS.Mode == "ECS" or ECS.Mode == "Speed" then
 		-- Break Timer
 		af[#af+1] = LoadFont("Wendy/_wendy small")..{
 			Name="BreakTimer",
@@ -275,11 +319,11 @@ if (ECS.Mode == "ECS" or ECS.Mode == "Warmup" or (ECS.Mode == "Marathon" and Arv
 					s = s .. "Please press &START; to dismiss this message, then restart the marathon."
 				else
 					s = "Your " .. ECS.Mode .. " session has ended because you"
-					if ECS.Mode == "ECS" then
+					if ECS.Mode == "ECS" or ECS.Mode == "Speed" then
 						if ECS.BreakTimer < 0 then
 							s = s .. " used up all your break time!\n\n"
 						else
-							s = s .. " played more than 7 songs and your set has lasted longer than 1 hour!\n\n"
+							s = s .. " played more than 7 songs and have exceeded your allotted set time!\n\n"
 						end
 					elseif ECS.Mode == "Warmup" then
 						s = s .. "'ve played longer than 1 hour!\n\n"

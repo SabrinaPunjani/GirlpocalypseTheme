@@ -1,16 +1,19 @@
-local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/Stars"
-local banner_directory = FILEMAN:DoesFileExist(path) and path or THEME:GetPathG("","_FallbackBanners/Stars")
+local path = "/"..THEME:GetCurrentThemeDirectory().."Graphics/_FallbackBanners/"..ThemePrefs.Get("VisualStyle")
+local banner_directory = FILEMAN:DoesFileExist(path) and path or THEME:GetPathG("","_FallbackBanners/Arrows")
 
-local SongOrCourse, banner
+local SongOrCourse = GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentCourse() or GAMESTATE:GetCurrentSong()
+
+local bannerWidth = 418
+local bannerHeight = 164
 
 local t = Def.ActorFrame{
 	OnCommand=function(self)
 		if IsUsingWideScreen() then
 			self:zoom(0.7655)
-			self:xy(_screen.cx - 170, 112)
+			self:xy(_screen.cx - 170, 96)
 		else
 			self:zoom(0.75)
-			self:xy(_screen.cx - 166, 112)
+			self:xy(_screen.cx - 166, 96)
 		end
 	end
 }
@@ -19,7 +22,7 @@ local t = Def.ActorFrame{
 t[#t+1] = Def.Sprite{
 	Name="FallbackBanner",
 	Texture=banner_directory.."/banner"..SL.Global.ActiveColorIndex.." (doubleres).png",
-	InitCommand=function(self) self:setsize(418,164) end,
+	InitCommand=function(self) self:setsize(bannerWidth, bannerHeight) end,
 
 	CurrentSongChangedMessageCommand=function(self) self:playcommand("Set") end,
 	CurrentCourseChangedMessageCommand=function(self) self:playcommand("Set") end,
@@ -29,7 +32,6 @@ t[#t+1] = Def.Sprite{
 		-- don't bother assessing whether to draw or not draw
 		if PREFSMAN:GetPreference("ShowBanners") == false then return end
 
-		SongOrCourse = GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentCourse() or GAMESTATE:GetCurrentSong()
 		if SongOrCourse and SongOrCourse:HasBanner() then
 			self:visible(false)
 		else
@@ -42,7 +44,7 @@ if PREFSMAN:GetPreference("ShowBanners") then
 	t[#t+1] = Def.ActorProxy{
 		Name="BannerProxy",
 		BeginCommand=function(self)
-			banner = SCREENMAN:GetTopScreen():GetChild('Banner')
+			local banner = SCREENMAN:GetTopScreen():GetChild('Banner')
 			self:SetTarget(banner)
 		end
 	}
@@ -70,32 +72,45 @@ t[#t+1] = Def.ActorFrame{
 
 local SetSongPointText = function(self)
 	local song = GAMESTATE:GetCurrentSong()
+
 	if song == nil then
 		self:settext("Min Song Points:")
 		return
 	end
-	local group_name = song:GetGroupName()
-	if (group_name ~= "ECS9 - Upper" and
-		group_name ~= "ECS9 - Lower" and 
-		group_name ~= "ECS9 - Upper Marathon") then
+
+	if not IsPlayingFromPackForDivision(song) then
 		self:settext("Min Song Points:")
 		return
 	end
-	local song_info = PlayerIsUpper() and ECS.SongInfo.Upper or ECS.SongInfo.Lower
+
+	local song_info = nil
+
+	if ECS.Mode == "Speed" then
+		song_info = ECS.SongInfo.Speed
+	elseif GetDivision() == "upper" then
+		song_info = ECS.SongInfo.Upper
+	elseif GetDivision() == "mid" then
+		song_info = ECS.SongInfo.Mid
+	else
+		song_info = ECS.SongInfo.Lower
+	end
+
 	local song_name = song:GetDisplayFullTitle()
 	local song_data = FindEcsSong(song_name, song_info)
 	if song_data == nil then
 		self:settext("Min Song Points:")
 		return
 	end
-	self:settext("Min Song Points: " .. tostring(song_data.dp + song_data.ep + song_data.rp))
+
+	score, _ = CalculateScoreForSong(ECS.Players[PROFILEMAN:GetPlayerName(GAMESTATE:GetMasterPlayerNumber())], song_name, 0, {}, false)
+	self:settext("Min Song Points: " .. tostring(score))
 end
 
 -- ECS Information
 t[#t+1] = Def.ActorFrame{
 	InitCommand=function(self)
-		self:addx(-170):addy(-60)
-		if ECS.Mode ~= "ECS" then
+		self:addx(-175):addy(-60)
+		if ECS.Mode ~= "ECS" or ECS.Mode ~= "Speed" then
 			self:visible(false)
 		end
 	end,
@@ -106,8 +121,7 @@ t[#t+1] = Def.ActorFrame{
 			return
 		end
 		local group_name = song:GetGroupName()
-		if ((group_name == "ECS9 - Upper" and PlayerIsUpper()) or
-			(group_name == "ECS9 - Lower" and not PlayerIsUpper())) then
+		if IsPlayingFromPackForDivision() then
 			self:visible(true)
 		else
 			self:visible(false)
@@ -133,10 +147,14 @@ t[#t+1] = Def.ActorFrame{
 		OnCommand=SetSongPointText,
 		CurrentSongChangedMessageCommand=SetSongPointText,
 	},
+	Def.Quad{
+		Name="EndOfSetBg",
+		InitCommand=function(self) self:diffuse(color("#ffffffaa")):zoomto(410, 80):addx(175):addy(100):visible(false) end
+	},
 	Def.Sprite{
 		Texture=THEME:GetPathG("", "_relics/slimebadge.png"),
 		InitCommand=function(self)
-			self:zoom(0.4):addx(320):addy(100)
+			self:zoom(0.28):addx(-8):addx(0):addy(100)
 		end,
 		OnCommand=function(self)
 			local relic_used = false
@@ -150,14 +168,14 @@ t[#t+1] = Def.ActorFrame{
 					end
 				end
 			end
-
+			if relic_used then self:GetParent():GetChild("EndOfSetBg"):visible(true) end
 			self:visible(relic_used)
 		end,
 	},
 	Def.Sprite{
 		Texture=THEME:GetPathG("", "_relics/agilitypotion.png"),
 		InitCommand=function(self)
-			self:zoom(0.4):addx(170):addy(100)
+			self:zoom(0.28):addx(-8):addx(40):addy(100)
 		end,
 		OnCommand=function(self)
 			local relic_used = false
@@ -171,13 +189,14 @@ t[#t+1] = Def.ActorFrame{
 					end
 				end
 			end
+			if relic_used then self:GetParent():GetChild("EndOfSetBg"):visible(true) end
 			self:visible(relic_used)
 		end,
 	},
 	Def.Sprite{
 		Texture=THEME:GetPathG("", "_relics/staminapotion.png"),
 		InitCommand=function(self)
-			self:zoom(0.4):addx(20):addy(100)
+			self:zoom(0.28):addx(-8):addx(80):addy(100)
 		end,
 		OnCommand=function(self)
 			local relic_used = false
@@ -191,8 +210,145 @@ t[#t+1] = Def.ActorFrame{
 					end
 				end
 			end
+			if relic_used then self:GetParent():GetChild("EndOfSetBg"):visible(true) end
+			self:visible(relic_used)
+		end,
+	},
+	Def.Sprite{
+		Texture=THEME:GetPathG("", "_relics/accuracypotion.png"),
+		InitCommand=function(self)
+			self:zoom(0.28):addx(-8):addx(120):addy(100)
+		end,
+		OnCommand=function(self)
+			local relic_used = false
+			for i=1,7 do
+				local song_played = ECS.Player.SongsPlayed[i]
+				if song_played ~= nil and not song_played.failed then
+					for relic in ivalues(song_played.relics_used) do
+						if relic.name == "Accuracy Potion" then
+							relic_used = true
+						end
+					end
+				end
+			end
+			if relic_used then self:GetParent():GetChild("EndOfSetBg"):visible(true) end
+			self:visible(relic_used)
+		end,
+	},
+	Def.Sprite{
+		Texture=THEME:GetPathG("", "_relics/tpastandard.png"),
+		InitCommand=function(self)
+			self:zoom(0.28):addx(-8):addx(160):addy(100)
+		end,
+		OnCommand=function(self)
+			local relic_used = false
+			for i=1,7 do
+				local song_played = ECS.Player.SongsPlayed[i]
+				if song_played ~= nil and not song_played.failed then
+					for relic in ivalues(song_played.relics_used) do
+						if relic.name == "TPA Standard" then
+							relic_used = true
+						end
+					end
+				end
+			end
+			if relic_used then self:GetParent():GetChild("EndOfSetBg"):visible(true) end
+			self:visible(relic_used)
+		end,
+	},
+	Def.Sprite{
+		Texture=THEME:GetPathG("", "_relics/memepeaceberet.png"),
+		InitCommand=function(self)
+			self:zoom(0.28):addx(-8):addx(200):addy(100)
+		end,
+		OnCommand=function(self)
+			local relic_used = false
+			for i=1,7 do
+				local song_played = ECS.Player.SongsPlayed[i]
+				if song_played ~= nil and not song_played.failed then
+					for relic in ivalues(song_played.relics_used) do
+						if relic.name == "Memepeace Beret" then
+							relic_used = true
+						end
+					end
+				end
+			end
+			if relic_used then self:GetParent():GetChild("EndOfSetBg"):visible(true) end
+			self:visible(relic_used)
+		end,
+	},
+	Def.Sprite{
+		Texture=THEME:GetPathG("", "_relics/hellfire.png"),
+		InitCommand=function(self)
+			self:zoom(0.28):addx(-8):addx(240):addy(100)
+		end,
+		OnCommand=function(self)
+			local relic_used = false
+			for i=1,7 do
+				local song_played = ECS.Player.SongsPlayed[i]
+				if song_played ~= nil and not song_played.failed then
+					for relic in ivalues(song_played.relics_used) do
+						if relic.name == "Hellfire" then
+							relic_used = true
+						end
+					end
+				end
+			end
+			if relic_used then self:GetParent():GetChild("EndOfSetBg"):visible(true) end
+			self:visible(relic_used)
+		end,
+	},
+	Def.Sprite{
+		Texture=THEME:GetPathG("", "_relics/despotschapeau.png"),
+		InitCommand=function(self)
+			self:zoom(0.28):addx(-8):addx(280):addy(100)
+		end,
+		OnCommand=function(self)
+			local relic_used = false
+			for i=1,7 do
+				local song_played = ECS.Player.SongsPlayed[i]
+				if song_played ~= nil and not song_played.failed then
+					for relic in ivalues(song_played.relics_used) do
+						if relic.name == "Despot's Chapeau" then
+							relic_used = true
+						end
+					end
+				end
+			end
+			if relic_used then self:GetParent():GetChild("EndOfSetBg"):visible(true) end
 			self:visible(relic_used)
 		end,
 	},
 }
+
+if not GAMESTATE:IsCourseMode() then
+	t[#t+1] = Def.Sprite {
+		OnCommand=function(self)
+			self:draworder(101)
+			self:playcommand("SetCD")
+		end,
+		OffCommand=function(self)
+			self:bouncebegin(0.15)
+		end,
+		CurrentSongChangedMessageCommand=function(self) self:playcommand("SetCD") end,
+		SwitchFocusToGroupsMessageCommand=function(self) self:GetChild("CdTitle"):visible(false) end,
+		SetCDCommand=function(self)
+			SongOrCourse = GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentCourse() or GAMESTATE:GetCurrentSong()
+			if SongOrCourse and SongOrCourse:HasCDTitle() then
+				self:visible(true)
+				self:Load( GAMESTATE:GetCurrentSong():GetCDTitlePath() )
+				local dim1, dim2 = math.max(self:GetWidth(), self:GetHeight()), math.min(self:GetWidth(), self:GetHeight())
+				local ratio = math.max(dim1 / dim2, 2.5)
+
+				local toScale = self:GetWidth() > self:GetHeight() and self:GetWidth() or self:GetHeight()
+				self:xy((bannerWidth - 30) / 2, (bannerHeight - 30)/ 2)
+				self:zoom(22 / toScale * ratio)
+				self:finishtweening():addrotationy(0):linear(.5):addrotationy(360)
+			else
+				self:visible(false)
+			end
+		end
+	}
+end
+
 return t

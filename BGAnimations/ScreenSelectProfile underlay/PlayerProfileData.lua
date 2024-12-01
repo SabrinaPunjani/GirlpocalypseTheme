@@ -1,18 +1,4 @@
 -- ----------------------------------------------------
--- local tables containing NoteSkins and JudgmentGraphics available to SL
--- We'll compare values from profiles against these "master" tables as it
--- seems to be disconcertingly possible for user data to contain errata, typos, etc.
-
-local noteskins = NOTESKIN:GetNoteSkinNames()
-local judgment_graphics = {}
-
--- get a table like { "ITG", "FA+" }
-local judgment_dirs = FILEMAN:GetDirListing(THEME:GetCurrentThemeDirectory().."/Graphics/_judgments/", true, false)
-for dir in ivalues(judgment_dirs) do
-	judgment_graphics[dir] = GetJudgmentGraphics(dir)
-end
-
--- ----------------------------------------------------
 -- some local functions that will help process profile data into presentable strings
 
 local RecentMods = function(mods)
@@ -119,7 +105,7 @@ end
 -- retrieves profile data from disk without applying it to the SL table
 
 local RetrieveProfileData = function(profile, dir)
-	local theme_name = THEME:GetThemeDisplayName()
+	local theme_name = "Simply Love" -- Share Simply Love user preferences
 	local path = dir .. theme_name .. " UserPrefs.ini"
 	if FILEMAN:DoesFileExist(path) then
 		return IniFile.ReadFile(path)[theme_name]
@@ -152,15 +138,14 @@ for i=1, PROFILEMAN:GetNumLocalProfiles() do
 		index = i,
 		dir=dir,
 		displayname = profile_name,
-		highscorename = profile:GetLastUsedHighScoreName(),
-		-- recentsong = RecentSong(profile:GetLastPlayedSong()),
 		totalsongs = TotalSongs(profile:GetNumTotalSongsPlayed()),
 		mods = mods,
 		noteskin = noteskin,
 		judgment = judgment,
 		country = ECSCountry(profile_name),
 		level = ECSLevel(profile_name),
-		exp = ECSExp(profile_name)
+		exp = ECSExp(profile_name),
+		guid = profile:GetGUID(),
 	}
 
 	table.insert(profile_data, data)

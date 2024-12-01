@@ -1,30 +1,46 @@
 return Def.Actor{
 	OffCommand=function(self)
 		self:sleep(0.9)
+		if GetDivision() == nil then return end
 
 		if ECS.Mode == "ECS" then
-			if PlayerIsUpper() == nil then return end
-
-			if PlayerIsUpper() then 
-				local omlaah = SONGMAN:FindSong("ECS9 - Upper/[18] [186] One More Lovely (After After Hours) FP 186")
-				if omlaah then
-					GAMESTATE:SetPreferredSong(omlaah)
+			if GetDivision() == "upper" then
+				local default = SONGMAN:FindSong("ECS13 - Upper/[24] [240] Opasnyje Jadjernaja")
+				if default then
+					GAMESTATE:SetPreferredSong(default)
+				end
+			elseif GetDivision() == "mid" then
+				local default = SONGMAN:FindSong("ECS13 - Mid/[18] [180] Fractal Glitch Works (Part 3) Nirvikalpa Samadhi")
+				if default then
+					GAMESTATE:SetPreferredSong(default)
 				end
 			else
-				local discovery = SONGMAN:FindSong("ECS9 - Lower/[12] [130] Discovery")
-				if discovery then
-					GAMESTATE:SetPreferredSong(discovery)
-				else
-					local ians_op = SONGMAN:FindSong("ECS9 - Lower/[17] [174] Ian's OP")
-					if ians_op then
-						GAMESTATE:SetPreferredSong(ians_op)
-					end
+				local default = SONGMAN:FindSong("ECS13 - Lower/[12] [120] Adventure")
+				if default then
+					GAMESTATE:SetPreferredSong(default)
 				end
 			end
+		elseif ECS.Mode == "Speed" then
+			local default = SONGMAN:FindSong("ECS13 - Speed/[24] [240] Satanic Static")
+			if default then
+				GAMESTATE:SetPreferredSong(default)
+			end
 		elseif ECS.Mode == "Marathon" then
-			local stratospheric = SONGMAN:FindSong("ECS9 - Upper Marathon/Stratospheric Intricacy")
-			if stratospheric then
-				GAMESTATE:SetPreferredSong(stratospheric)
+			if GetDivision() == "upper" then
+				local default = SONGMAN:FindSong("ECS13 - Upper Marathon/HIGHER TEMPO")
+				if default then
+					GAMESTATE:SetPreferredSong(default)
+				end
+			elseif GetDivision() == "mid" then
+				local default = SONGMAN:FindSong("ECS13 - Mid Marathon/NO MORE GAMES")
+				if default then
+					GAMESTATE:SetPreferredSong(default)
+				end
+			else
+				local default = SONGMAN:FindSong("ECS13 - Lower Marathon/TIMELESS BEATZ")
+				if default then
+					GAMESTATE:SetPreferredSong(default)
+				end
 			end
 		end
 	end

@@ -58,6 +58,18 @@ local t = Def.ActorFrame{
 			-- to set certain Gameplay settings and determine which screen comes next
 			ECS.Mode = choices[cursor.index+1]
 
+			-- Override practice mode as ECS. The large majority of the behavior should be common
+			-- to ECS, so we'd rather selectively disable features instead of littering the codebase with
+			-- 'if ECS.Mode == "ECS" or ECS.Mode == "PracticeSet"'.
+			if choices[cursor.index+1] == "PracticeSet" then
+				ECS.Mode = "ECS"
+				ECS.IsPractice = true
+			end
+
+			if ECS.Mode == "Speed" then
+				ECS.BreakTimer = (20 * 60)
+			end
+
 			-- hardcode this to always be ITG windows for the ECS event
 			SL.Global.GameMode = "ITG"
 
@@ -81,21 +93,31 @@ local t = Def.ActorFrame{
 	Def.ActorFrame{
 		InitCommand=function(self) self:x(-188) end,
 		Def.Quad{
-			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(-60) end,
+			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(-100) end,
 			OffCommand=function(self) self:sleep(0.4):linear(0.1):diffusealpha(0) end
 		},
 		Def.Quad{
-			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(-20) end,
+			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(-60) end,
 			OnCommand=function(self) if choices[2]==nil then self:visible(false) end end,
 			OffCommand=function(self) self:sleep(0.3):linear(0.1):diffusealpha(0) end
 		},
 		Def.Quad{
-			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(20) end,
+			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(-20) end,
 			OnCommand=function(self) if choices[3]==nil then self:visible(false) end end,
 			OffCommand=function(self) self:sleep(0.2):linear(0.1):diffusealpha(0) end
 		},
 		Def.Quad{
+			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(20) end,
+			OnCommand=function(self) if choices[4]==nil then self:visible(false) end end,
+			OffCommand=function(self) self:sleep(0.1):linear(0.1):diffusealpha(0) end
+		},
+		Def.Quad{
 			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(60) end,
+			OnCommand=function(self) if choices[4]==nil then self:visible(false) end end,
+			OffCommand=function(self) self:sleep(0.1):linear(0.1):diffusealpha(0) end
+		},
+		Def.Quad{
+			InitCommand=function(self) self:diffuse(0.2,0.2,0.2,1):zoomto(90,38):y(100) end,
 			OnCommand=function(self) if choices[4]==nil then self:visible(false) end end,
 			OffCommand=function(self) self:sleep(0.1):linear(0.1):diffusealpha(0) end
 		},
@@ -103,12 +125,12 @@ local t = Def.ActorFrame{
 
 	-- border
 	Def.Quad{
-		InitCommand=function(self) self:zoomto(302, 162):diffuse(1,1,1,1) end,
+		InitCommand=function(self) self:zoomto(302, 242):diffuse(1,1,1,1) end,
 		OffCommand=function(self) self:sleep(0.6):linear(0.2):cropleft(1) end
 	},
 	-- background
 	Def.Quad{
-		InitCommand=function(self) self:zoomto(300, 160):diffuse(0,0,0,1) end,
+		InitCommand=function(self) self:zoomto(300, 240):diffuse(0,0,0,1) end,
 		OffCommand=function(self) self:sleep(0.6):linear(0.2):cropleft(1) end
 	},
 
@@ -129,18 +151,18 @@ local t = Def.ActorFrame{
 	Def.ActorFrame{
 		Name="Cursor",
 		OnCommand=function(self)
-			-- it is possible for players to have something other than "Casual" as the default choice
+			-- it is possible for players to have something other than "ITG" as the default choice
 			-- for ScreenSelectPlayMode (see: Simply Love Options in the Operator Menu)
 			-- account for that here, in the OnCommand of the cursor ActorFrame, by updating cursor.index
 			-- to match the value of ThemePrefs.Get("DefaultGameMode") in the choices table
 			if ScreenName == "ScreenSelectPlayMode" then
-				cursor.index = (FindInTable(ThemePrefs.Get("DefaultGameMode"), choices) or 1) - 1
+				cursor.index = (FindInTable(ThemePrefs.Get("DefaultGameMode"), choices) or 2) - 1
 			end
-			self:x(-150):y( -60 + (cursor.h * cursor.index) )
+			self:x(-150):y( -80 + (cursor.h * cursor.index) )
 		end,
 		UpdateCommand=function(self)
 			self:stoptweening():linear(0.1)
-				:y( -60 + (cursor.h * cursor.index) )
+				:y( -100 + (cursor.h * cursor.index) )
 		end,
 
 		Def.Quad{

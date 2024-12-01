@@ -5,38 +5,40 @@ if GAMESTATE:IsCourseMode() then return end
 -- arguments passed in from Graphs.lua
 local args = ...
 local player = args.player
+local pn = ToEnumShortString(player)
 local GraphWidth = args.GraphWidth
 local GraphHeight = args.GraphHeight
+local mods = SL[pn].ActiveModifiers
+
+local pn = ToEnumShortString(player)
 
 -- sequential_offsets gathered in ./BGAnimations/ScreenGameplay overlay/JudgmentOffsetTracking.lua
-local sequential_offsets = SL[ToEnumShortString(player)].Stages.Stats[SL.Global.Stages.PlayedThisGame + 1].sequential_offsets
+local sequential_offsets = SL[pn].Stages.Stats[SL.Global.Stages.PlayedThisGame + 1].sequential_offsets
 
 -- a table to store the AMV's vertices
-local verts= {}
--- TotalSeconds is used in scaling the x-coordinates of the AMV's vertices
-local FirstSecond = GAMESTATE:GetCurrentSong():GetFirstSecond()
-local TotalSeconds = GAMESTATE:GetCurrentSong():GetLastSecond()
+-- this will be a table of tables, to get around ActorMultiVertex limitations on D3D renderer
+local vertsTable= {}
+
+local Steps = GAMESTATE:GetCurrentSteps(player)
+local TimingData = Steps:GetTimingData()
+-- FirstSecond and LastSecond are used in scaling the x-coordinates of the AMV's vertices
+local FirstSecond = math.min(TimingData:GetElapsedTimeFromBeat(0), 0)
+local LastSecond = GAMESTATE:GetCurrentSong():GetLastSecond()
 
 -- variables that will be used and re-used in the loop while calculating the AMV's vertices
 local Offset, CurrentSecond, TimingWindow, x, y, c, r, g, b
 
 -- ---------------------------------------------
--- if players have disabled W4 or W4+W5, there will be a smaller pool
--- of judgments that could have possibly been earned
-local worst_window = PREFSMAN:GetPreference("TimingWindowSecondsW5")
-local windows = SL.Global.ActiveModifiers.TimingWindows
-for i=5,1 do
-	if windows[i] then
-		worst_window = PREFSMAN:GetPreference("TimingWindowSecondsW"..i)
-		break
-	end
-end
+-- scale worst_window to the worst judgment hit in the song
+-- start at Excellent window as the worst window since most quads are
+-- hard to make sense of visually
+local worst_window = GetTimingWindow(math.max(2, GetWorstJudgment(sequential_offsets)))
 
 -- ---------------------------------------------
 
 local colors = {}
-for w=5,1,-1 do
-	if SL.Global.ActiveModifiers.TimingWindows[w]==true then
+for w=NumJudgmentsAvailable(),1,-1 do
+	if SL[pn].ActiveModifiers.TimingWindows[w]==true then
 		colors[w] = DeepCopy(SL.JudgmentColors[SL.Global.GameMode][w])
 	else
 		colors[w] = DeepCopy(colors[w+1] or SL.JudgmentColors[SL.Global.GameMode][w+1])
@@ -45,7 +47,19 @@ end
 
 -- ---------------------------------------------
 
+-- Initialize vertices table of tables and start the stepcount
+vertsTable[#vertsTable+1] = {}
+local stepCount = 0
+
 for t in ivalues(sequential_offsets) do
+	stepCount = stepCount + 1
+	-- If the step-count exceeds the threshold, start a new table within the table.
+	if stepCount >= 16000 then
+		stepCount = 0
+		vertsTable[#vertsTable+1] = {}
+	end
+	local verts = vertsTable[#vertsTable]
+	
 	CurrentSecond = t[1]
 	Offset = t[2]
 
@@ -56,7 +70,7 @@ for t in ivalues(sequential_offsets) do
 	end
 
 	-- pad the right end because the time measured seems to lag a little...
-	x = scale(CurrentSecond, FirstSecond, TotalSeconds + 0.05, 0, GraphWidth)
+	x = scale(CurrentSecond, FirstSecond, LastSecond + 0.05, 0, GraphWidth)
 
 	if Offset ~= "Miss" then
 		-- DetermineTimingWindow() is defined in ./Scripts/SL-Helpers.lua
@@ -65,6 +79,14 @@ for t in ivalues(sequential_offsets) do
 
 		-- get the appropriate color from the global SL table
 		c = colors[TimingWindow]
+
+		if mods.ShowFaPlusWindow and mods.ShowFaPlusPane then
+			abs_offset = math.abs(Offset)
+			if abs_offset > GetTimingWindow(1, "FA+") and abs_offset <= GetTimingWindow(2, "FA+") then
+				c = SL.JudgmentColors["FA+"][2]
+			end
+		end
+
 		-- get the red, green, and blue values from that color
 		r = c[1]
 		g = c[2]
@@ -88,12 +110,19 @@ end
 -- the scatter plot will use an ActorMultiVertex in "Quads" mode
 -- this is more efficient than drawing n Def.Quads (one for each judgment)
 -- because the entire AMV will be a single Actor rather than n Actors with n unique Draw() calls.
-local amv = Def.ActorMultiVertex{
-	InitCommand=function(self) self:x(-GraphWidth/2) end,
-	OnCommand=function(self)
-		self:SetDrawState({Mode="DrawMode_Quads"})
-			:SetVertices(verts)
-	end,
-}
 
-return amv
+-- Since we've now split the table into multiples, create an ActorMultiVertex for each table and store them into one ActorFrame.
+local af = Def.ActorFrame{}
+
+for verts in ivalues(vertsTable) do
+	local amv = Def.ActorMultiVertex{
+		InitCommand=function(self) self:x(-GraphWidth/2) end,
+		OnCommand=function(self)
+			self:SetDrawState({Mode="DrawMode_Quads"})
+				:SetVertices(verts)
+		end,
+	}
+	af[#af+1] = amv
+end
+
+return af

@@ -21,7 +21,7 @@ and SL.P2.ActiveModifiers.DataVisualizations == "Step Statistics")
 
 -- max_seconds is how many seconds of a stepchart we want visualized on-screen at once.
 -- For very long songs (longer than, say, 10 minutes) the density graph becomes too
--- horizontally compressed (squeezed in, so to speak) and it's dificult get any useful
+-- horizontally compressed (squeezed in, so to speak) and it's dificult to get any useful
 -- information out of it, visually.  And there are a lot of Very Long Songs™.
 --
 -- So, we hardcode it to 4 minutes here. If the song is longer than 4 minutes, the density
@@ -43,7 +43,11 @@ local af = Def.ActorFrame{
 		LifeMeter = SCREENMAN:GetTopScreen():GetChild("Life"..pn)
 	end,
 	UpdateCommand=function(self)
-		self:sleep(UpdateRate):queuecommand("Update")
+		if UpdateRate ~= nil then
+			self:sleep(UpdateRate):queuecommand("Update")
+		else
+			self:sleep(LifeBaseSampleRate):queuecommand("Update")
+		end
 	end
 }
 
@@ -81,7 +85,17 @@ local histogram_amv = Scrolling_NPS_Histogram(player, width, height)..{
 
 -- PeakNPS text
 local text = LoadFont("Common Normal")..{
-	InitCommand=function(self) self:horizalign(right):zoom(0.9) end,
+	InitCommand=function(self)
+		self:zoom(0.9)
+		self:halign( PlayerNumber:Reverse()[OtherPlayer[player]] )
+		self:vertalign(bottom)
+
+		-- flip alignment if ultrawide and both players joined because the pane
+		-- will now appear on the player's side of the screen rather than opposite
+		if IsUltraWide and #GAMESTATE:GetHumanPlayers() > 1 then
+			self:halign( PlayerNumber:Reverse()[player] )
+		end
+	end,
 	PeakNPSUpdatedMessageCommand=function(self)
 		local my_peak = GAMESTATE:Env()[pn.."PeakNPS"]
 
@@ -90,68 +104,27 @@ local text = LoadFont("Common Normal")..{
 			return
 		end
 
-		self:settext( THEME:GetString("ScreenGameplay", "PeakNPS") .. ": " .. round(my_peak * SL.Global.ActiveModifiers.MusicRate,2) )
+		if player == PLAYER_1 then
+			self:x(_screen.w*0.5 - SL_WideScale(6,59))
 
-		-- -----------------------------------------------------------------------
-		local StepsOrTrail = (GAMESTATE:IsCourseMode() and GAMESTATE:GetCurrentTrail(player)) or GAMESTATE:GetCurrentSteps(player)
-		local total_tapnotes = StepsOrTrail:GetRadarValues(player):GetValue( "RadarCategory_Notes" )
-
-		-- determine how many digits are needed to express the number of notes in base-10
-		local digits = (math.floor(math.log10(total_tapnotes)) + 1)
-		-- subtract 4 from the digit count; we're only really interested in how many digits past 4
-		-- this stepcount is so we can use it to align the score actor in the StepStats pane if needed
-		-- aligned-with-4-digits is the default
-		digits = clamp(math.max(4, digits) - 4, 0, 3)
-
-		-- -----------------------------------------------------------------------
-		-- FIXME:
-		-- crumby code used for
-		-- positioning x offset
-		-- of PeakNPS
-
-		local stepstatspane = self:GetParent():GetParent()
-		local padding = {}
-
-		if IsUltraWide then
-			-- 21:9 (and wider)
-			if (#GAMESTATE:GetHumanPlayers() <= 1) then
-				padding[PLAYER_1] = -_screen.cx + 36
-				padding[PLAYER_2] = 36
-			else
-				padding[PLAYER_1] = -10
-				padding[PLAYER_2] = -922
-			end
-
-		elseif IsUsingWideScreen() then
-			-- 16:9, 16:10
 			if NoteFieldIsCentered then
-				padding[PLAYER_1] = -_screen.cx - 116
-				padding[PLAYER_2] = WideScale(-20,20)
-			else
-				padding[PLAYER_1] = -_screen.cx + 26.5
-				padding[PLAYER_2] = 26.5
+				self:x(_screen.w*0.5 - 134)
 			end
-
+			if IsUltraWide and #GAMESTATE:GetHumanPlayers() > 1 then
+				self:x(52)
+			end
 		else
-			-- 4:3
-			padding[PLAYER_1] = -_screen.cx + 28
-			padding[PLAYER_2] = 28
+			self:x(SL_WideScale(6,130))
+			if NoteFieldIsCentered then
+				self:x(69)
+			end
+			if IsUltraWide and #GAMESTATE:GetHumanPlayers() > 1 then
+				self:x(180)
+			end
 		end
 
-		if IsUsingWideScreen() and not (IsUltraWide and #GAMESTATE:GetHumanPlayers() > 1) then
-			-- pad with an additional ~14px for each digit past 4 the stepcount goes
-			-- this keeps the score right-aligned with the right edge of the judgment
-			-- counts in the StepStats pane
-			local digitpadding = (digits * 14)
-			-- provide an upper bound of extra padding for extra digits when NoteFieldIsCentered
-			if NoteFieldIsCentered then digitpadding = clamp(digitpadding, 0, WideScale(7,14)) end
-
-			padding[player] = padding[player] + digitpadding
-		end
-		-- -----------------------------------------------------------------------
-
-		self:x( stepstatspane:GetX() + padding[player] + (self:GetWidth()/self:GetZoom()) )
 		self:y( -self:GetHeight()/2 - 2 )
+		self:settext( ("%s: %g"):format(THEME:GetString("ScreenGameplay", "PeakNPS"), round(my_peak * SL.Global.ActiveModifiers.MusicRate,2)) )
 	end,
 }
 
@@ -176,16 +149,15 @@ local graph_and_lifeline = Def.ActorFrame{
 
 		UpdateRate = LifeBaseSampleRate
 
-		-- FIXME: add inline comments explaining what a 'simple' BPM is -quietly
-		-- FIXME: add inline comments explaining what "quantize the timing [...] to avoid jaggies" means
-		--            because I have no idea what it means -quietly
-
-		-- if the song has a 'simple' BPM, then quantize the timing
-		-- to the nearest multiple of 8ths to avoid jaggies
+		-- round up UpdateRate and quantize it to an 8th note interval
+		-- for streams, this means each update interval contains a consistent number of notes,
+		-- so that when one keeps combo, the total life gained between updates will be similar,
+		-- which makes the similar slope optimization below more likely to take place
+		-- but if we have BPM changes, then a single interval doesn't work
 		if not TimingData:HasBPMChanges() then
 			local bpm = TimingData:GetBPMs()[1]
-			if bpm >= 60 and bpm <= 300 then
-				-- make sure that the BPM makes sense
+			-- also avoid this for low BPMs because that might make the interval too long to be useful
+			if bpm >= 60 then
 				local Interval8th = (60 / bpm) / 2
 				UpdateRate = Interval8th * math.ceil(UpdateRate / Interval8th)
 			end
@@ -234,8 +206,8 @@ local graph_and_lifeline = Def.ActorFrame{
 				local x = scale( seconds, first_second, last_second, 0, scaled_width )
 				local y = scale( LifeMeter:GetLife(), 1, 0, 0, height )
 
-				-- if the slopes of the newest line segment is similar
-				-- to the previous segment, just extend the old one.
+				-- if the slope of the newest line segment is similar
+				-- to the slope of the previous segment, extend the old one.
 				local condense = false
 				if (#life_verts >= 2) then
 					local slope_original = SlopeAngle(life_verts[#life_verts-1][1], life_verts[#life_verts][1])

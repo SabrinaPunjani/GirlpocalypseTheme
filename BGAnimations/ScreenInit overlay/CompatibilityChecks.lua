@@ -16,7 +16,7 @@ return Def.Actor{
 
 		-- defined in ./Scripts/SL-Helpers.lua
 		if not StepManiaVersionIsSupported() then
-			SM( THEME:GetString("ScreenInit", "UnsupportedSMVersion"):format(ProductVersion()) )
+			SM( THEME:GetString("ScreenInit", "UnsupportedSMVersion"):format(ProductFamily(), ProductVersion()) )
 			-- ScreenSystemOptions is the first choice in the operator menu
 			-- players can set their game, theme, default NoteSkin, etc. from it
 			SCREENMAN:SetNewScreen("ScreenSystemOptions")
@@ -30,6 +30,15 @@ return Def.Actor{
 			SM( THEME:GetString("ScreenInit", "UnsupportedGame"):format(GAMESTATE:GetCurrentGame():GetName()) )
 			-- don't politely transition from ScreenInit to ScreenSystemOptions with fades; just get the player there now
 			SCREENMAN:SetNewScreen("ScreenSystemOptions")
+		end
+
+		-- Simply Thonk relies heavily on ActorFrameTextures, and SM5's D3D VideoRenderer does not support
+		-- render-to-texture.  Thonk mode in D3D is currently broken (read: blinding) enough that it merits
+		-- a photosensitive epilepsy warning, so if SM5 starts up in this configuration, redirect to
+		-- Simply Love Options, and tell the player to pick a different VisualStyle or change their VideoRenderer.
+		if ThemePrefs.Get("VisualStyle") == "Thonk" and not SupportsRenderToTexture() then
+			SM( THEME:GetString("ScreenThemeOptions", "ThonkRequiresRenderToTexture") )
+			SCREENMAN:SetNewScreen("ScreenThemeOptions")
 		end
 	end
 }
